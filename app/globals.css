@@ -1,97 +1,70 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+
 :root {
-  --neon-pink: #ff00ff;
-  --neon-cyan: #00ffff;
-  --neon-green: #39ff14;
-  --neon-yellow: #ffff00;
-  --neon-orange: #ff6600;
-  --dark-bg: #0a0a0f;
-  --dark-surface: #12121a;
-  --dark-border: #1e1e2e;
+  --bg-primary: #1a1d23;
+  --bg-secondary: #232830;
+  --bg-tertiary: #2d333b;
+  --accent-green: #4ade80;
+  --accent-blue: #60a5fa;
+  --accent-pink: #f472b6;
+  --accent-yellow: #fbbf24;
+  --accent-purple: #a78bfa;
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
 }
 
 * {
-  box-sizing: border-box;
-  padding: 0;
   margin: 0;
+  padding: 0;
+  box-sizing: border-box;
 }
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
-  font-family: 'Rajdhani', sans-serif;
-  background: var(--dark-bg);
-  color: white;
+html, body {
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
-  background: 
-    radial-gradient(ellipse at 20% 20%, rgba(255, 0, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 80%, rgba(0, 255, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse at 50% 50%, rgba(57, 255, 20, 0.05) 0%, transparent 70%),
-    var(--dark-bg);
-  min-height: 100vh;
+  font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-.game-title {
-  font-family: 'Orbitron', sans-serif;
-  font-weight: 800;
-  font-size: 3rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  background: linear-gradient(135deg, var(--neon-pink), var(--neon-cyan));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  text-shadow: 0 0 30px rgba(255, 0, 255, 0.5);
-  animation: glow 2s ease-in-out infinite alternate;
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease;
 }
 
-@keyframes glow {
-  from {
-    filter: drop-shadow(0 0 10px rgba(255, 0, 255, 0.8));
-  }
-  to {
-    filter: drop-shadow(0 0 20px rgba(0, 255, 255, 0.8));
-  }
+button:active {
+  transform: scale(0.97);
 }
 
-@keyframes float {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-10px);
-  }
+input {
+  font-family: inherit;
+  outline: none;
+  border: none;
 }
 
-@keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.8;
-    transform: scale(1.02);
-  }
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
 }
 
-.fade-in {
-  animation: slideIn 0.6s ease-out forwards;
+::-webkit-scrollbar-thumb {
+  background: var(--bg-tertiary);
+  border-radius: 3px;
 }
 
-.delay-1 { animation-delay: 0.1s; opacity: 0; }
-.delay-2 { animation-delay: 0.2s; opacity: 0; }
-.delay-3 { animation-delay: 0.3s; opacity: 0; }
-.delay-4 { animation-delay: 0.4s; opacity: 0; }
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
