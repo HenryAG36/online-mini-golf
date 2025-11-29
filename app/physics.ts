@@ -3,10 +3,11 @@ import { Ball, Wall, Obstacle, Level, Vector2, Circle, Rectangle } from './types
 const FRICTION = 0.985;
 const MIN_VELOCITY = 0.15;
 const WALL_BOUNCE = 0.75;
-const MAX_POWER = 15;
+const MAX_POWER = 12;
+const MIN_POWER = 2;
 const HOLE_GRAVITY_RADIUS = 60;
-const HOLE_GRAVITY_STRENGTH = 0.15;
-const BALL_BOUNCE = 0.8;
+const HOLE_GRAVITY_STRENGTH = 0.18;
+const BALL_BOUNCE = 0.5; // 50% energy transfer on ball collision
 
 export function createBall(x: number, y: number): Ball {
   return {
@@ -17,12 +18,16 @@ export function createBall(x: number, y: number): Ball {
 }
 
 export function shootBall(ball: Ball, power: number, angle: number): Ball {
-  const clampedPower = Math.min(power, MAX_POWER);
+  // Apply a power curve for better control
+  // Map power from 0-1 range to MIN_POWER-MAX_POWER with slight curve
+  const normalizedPower = Math.max(0, Math.min(1, power));
+  const curvedPower = MIN_POWER + (normalizedPower * normalizedPower * 0.5 + normalizedPower * 0.5) * (MAX_POWER - MIN_POWER);
+  
   return {
     ...ball,
     velocity: {
-      x: Math.cos(angle) * clampedPower,
-      y: Math.sin(angle) * clampedPower,
+      x: Math.cos(angle) * curvedPower,
+      y: Math.sin(angle) * curvedPower,
     },
   };
 }
@@ -32,34 +37,34 @@ export function isBallMoving(ball: Ball): boolean {
   return speed > MIN_VELOCITY;
 }
 
-// Ball-to-ball collision detection and response
-export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ball2: Ball } {
+// Ball-to-ball collision - returns updated velocities for both balls
+export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ball2: Ball; collided: boolean } {
   const dx = ball2.position.x - ball1.position.x;
   const dy = ball2.position.y - ball1.position.y;
   const dist = Math.sqrt(dx * dx + dy * dy);
   const minDist = ball1.radius + ball2.radius;
 
   if (dist < minDist && dist > 0) {
-    // Collision detected - calculate collision response
+    // Collision normal
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // Relative velocity
+    // Relative velocity of ball1 with respect to ball2
     const dvx = ball1.velocity.x - ball2.velocity.x;
     const dvy = ball1.velocity.y - ball2.velocity.y;
 
     // Relative velocity along collision normal
     const dvn = dvx * nx + dvy * ny;
 
-    // Don't resolve if balls are moving apart
+    // Only resolve if balls are moving toward each other
     if (dvn > 0) {
-      // Collision impulse (assuming equal mass)
+      // Impulse magnitude (with energy transfer factor)
       const impulse = dvn * BALL_BOUNCE;
 
-      // Separate balls
+      // Separate balls to avoid overlap
       const overlap = minDist - dist;
-      const separationX = (overlap / 2 + 1) * nx;
-      const separationY = (overlap / 2 + 1) * ny;
+      const separationX = (overlap / 2 + 0.5) * nx;
+      const separationY = (overlap / 2 + 0.5) * ny;
 
       return {
         ball1: {
@@ -84,11 +89,12 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
             y: ball2.velocity.y + impulse * ny,
           },
         },
+        collided: true,
       };
     }
   }
 
-  return { ball1, ball2 };
+  return { ball1, ball2, collided: false };
 }
 
 export function updateBall(
@@ -97,10 +103,11 @@ export function updateBall(
   windmillAngles: Map<number, number>,
   movingWallOffsets: Map<number, number>,
   otherBalls: Ball[] = []
-): { ball: Ball; inWater: boolean; teleported: boolean } {
+): { ball: Ball; inWater: boolean; teleported: boolean; collidedBalls: Ball[] } {
   let newBall = { ...ball };
   let inWater = false;
   let teleported = false;
+  const collidedBalls: Ball[] = [];
 
   // Apply velocity
   newBall.position = {
@@ -115,7 +122,6 @@ export function updateBall(
   const distToHole = Math.sqrt(toHoleX * toHoleX + toHoleY * toHoleY);
   
   if (distToHole < HOLE_GRAVITY_RADIUS && distToHole > 0) {
-    // Gravity gets stronger as ball gets closer
     const gravityStrength = HOLE_GRAVITY_STRENGTH * (1 - distToHole / HOLE_GRAVITY_RADIUS);
     const gravityX = (toHoleX / distToHole) * gravityStrength;
     const gravityY = (toHoleY / distToHole) * gravityStrength;
@@ -135,7 +141,10 @@ export function updateBall(
   // Check collisions with other balls
   for (const otherBall of otherBalls) {
     const result = handleBallCollision(newBall, otherBall);
-    newBall = result.ball1;
+    if (result.collided) {
+      newBall = result.ball1;
+      collidedBalls.push(result.ball2);
+    }
   }
 
   // Check obstacles
@@ -160,10 +169,6 @@ export function updateBall(
       }
     }
     
-    if (obstacle.type === 'ramp') {
-      // Ramps act as safe zones over water - no special physics
-    }
-    
     if (obstacle.type === 'bumper') {
       const circle = obstacle.shape as Circle;
       const dist = distance(newBall.position, { x: circle.x, y: circle.y });
@@ -174,13 +179,11 @@ export function updateBall(
           y: newBall.position.y - circle.y,
         });
         
-        // Push ball out
         newBall.position = {
           x: circle.x + normal.x * (newBall.radius + circle.radius + 1),
           y: circle.y + normal.y * (newBall.radius + circle.radius + 1),
         };
         
-        // Reflect velocity
         const dot = newBall.velocity.x * normal.x + newBall.velocity.y * normal.y;
         newBall.velocity = {
           x: (newBall.velocity.x - 2 * dot * normal.x) * bounceFactor,
@@ -192,8 +195,6 @@ export function updateBall(
     if (obstacle.type === 'windmill') {
       const circle = obstacle.shape as Circle;
       const angle = windmillAngles.get(i) || 0;
-      
-      // Check collision with windmill blades
       const bladeLength = circle.radius;
       const bladeWidth = 12;
       
@@ -211,7 +212,6 @@ export function updateBall(
           newBall.position,
           newBall.radius
         )) {
-          // Push ball away from blade
           const perpAngle = bladeAngle + Math.PI / 2;
           const pushForce = 3;
           newBall.velocity = {
@@ -232,7 +232,6 @@ export function updateBall(
       const adjustedRect = { ...rect, y: rect.y + offset };
       
       if (rectCircleCollision(adjustedRect, newBall.position, newBall.radius)) {
-        // Bounce off moving wall
         const centerX = adjustedRect.x + adjustedRect.width / 2;
         if (newBall.position.x < centerX) {
           newBall.position.x = adjustedRect.x - newBall.radius - 1;
@@ -278,7 +277,6 @@ export function updateBall(
       });
       const normal = { x: -wallDir.y, y: wallDir.x };
       
-      // Determine which side of the wall the ball is on
       const wallCenter = {
         x: (wall.start.x + wall.end.x) / 2,
         y: (wall.start.y + wall.end.y) / 2,
@@ -293,7 +291,6 @@ export function updateBall(
         normal.y = -normal.y;
       }
       
-      // Push ball out of wall
       const closest = closestPointOnLine(wall.start, wall.end, newBall.position);
       const pushDist = newBall.radius + wall.thickness / 2 + 1;
       newBall.position = {
@@ -301,7 +298,6 @@ export function updateBall(
         y: closest.y + normal.y * pushDist,
       };
       
-      // Reflect velocity
       const dot = newBall.velocity.x * normal.x + newBall.velocity.y * normal.y;
       newBall.velocity = {
         x: (newBall.velocity.x - 2 * dot * normal.x) * WALL_BOUNCE,
@@ -315,23 +311,18 @@ export function updateBall(
     newBall.velocity = { x: 0, y: 0 };
   }
 
-  return { ball: newBall, inWater, teleported };
+  return { ball: newBall, inWater, teleported, collidedBalls };
 }
 
 export function checkHole(ball: Ball, level: Level): boolean {
   const dist = distance(ball.position, level.hole.position);
   const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
-  
-  // Ball needs to be close enough and slow enough to go in
   return dist < level.hole.radius && speed < 5;
 }
 
-// Get ball rotation angle based on velocity
 export function getBallRotation(ball: Ball, previousRotation: number): number {
   const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
   if (speed < 0.1) return previousRotation;
-  
-  // Calculate rotation based on distance traveled
   const rotationSpeed = speed / ball.radius;
   return previousRotation + rotationSpeed;
 }
@@ -387,7 +378,6 @@ function lineCircleCollision(
 function rectCircleCollision(rect: Rectangle, circleCenter: Vector2, circleRadius: number): boolean {
   const closestX = Math.max(rect.x, Math.min(circleCenter.x, rect.x + rect.width));
   const closestY = Math.max(rect.y, Math.min(circleCenter.y, rect.y + rect.height));
-  
   const dist = distance({ x: closestX, y: closestY }, circleCenter);
   return dist < circleRadius;
 }
