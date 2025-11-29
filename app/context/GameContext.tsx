@@ -28,6 +28,8 @@ interface GameContextType {
   currentLevel: number;
   gamePhase: 'lobby' | 'playing' | 'results';
   isMyTurn: boolean;
+  pendingCollisionVelocity: Vector2 | null;
+  clearPendingCollision: () => void;
   createRoom: (playerName: string) => Promise<string>;
   joinRoom: (code: string, playerName: string) => Promise<void>;
   leaveRoom: () => void;
@@ -94,7 +96,11 @@ export function GameProvider({ children }: GameProviderProps) {
   const pusherRef = useRef<Pusher | null>(null);
   const channelRef = useRef<ReturnType<Pusher['subscribe']> | null>(null);
   const lastBallUpdateRef = useRef<number>(0);
-  const collisionCallbackRef = useRef<((velocity: Vector2) => void) | null>(null);
+  const [pendingCollisionVelocity, setPendingCollisionVelocity] = useState<Vector2 | null>(null);
+  
+  const clearPendingCollision = useCallback(() => {
+    setPendingCollisionVelocity(null);
+  }, []);
 
   const isPusherConfigured = typeof window !== 'undefined' && 
     process.env.NEXT_PUBLIC_PUSHER_KEY && 
@@ -184,10 +190,10 @@ export function GameProvider({ children }: GameProviderProps) {
     });
 
     channel.bind('ball-collision', (data: { targetPlayerId: string; newVelocity: Vector2 }) => {
+      console.log('Received ball-collision event:', data, 'myPlayerId:', myPlayerId);
       if (data.targetPlayerId === myPlayerId) {
-        if (collisionCallbackRef.current) {
-          collisionCallbackRef.current(data.newVelocity);
-        }
+        console.log('Collision is for me! Setting velocity:', data.newVelocity);
+        setPendingCollisionVelocity(data.newVelocity);
       }
     });
 
@@ -485,6 +491,8 @@ export function GameProvider({ children }: GameProviderProps) {
       currentLevel,
       gamePhase,
       isMyTurn,
+      pendingCollisionVelocity,
+      clearPendingCollision,
       createRoom,
       joinRoom,
       leaveRoom,

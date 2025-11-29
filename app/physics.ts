@@ -88,17 +88,23 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
   return { ball1, ball2, collided: false };
 }
 
+interface CollisionInfo {
+  originalIndex: number;
+  originalPosition: Vector2;
+  newVelocity: Vector2;
+}
+
 export function updateBall(
   ball: Ball,
   level: Level,
   windmillAngles: Map<number, number>,
   movingWallOffsets: Map<number, number>,
   otherBalls: Ball[] = []
-): { ball: Ball; inWater: boolean; teleported: boolean; collidedBalls: Ball[] } {
+): { ball: Ball; inWater: boolean; teleported: boolean; collisions: CollisionInfo[] } {
   let newBall = { ...ball };
   let inWater = false;
   let teleported = false;
-  const collidedBalls: Ball[] = [];
+  const collisions: CollisionInfo[] = [];
 
   newBall.position = {
     x: newBall.position.x + newBall.velocity.x,
@@ -125,11 +131,16 @@ export function updateBall(
   };
 
   // Ball collisions
-  for (const otherBall of otherBalls) {
+  for (let i = 0; i < otherBalls.length; i++) {
+    const otherBall = otherBalls[i];
     const result = handleBallCollision(newBall, otherBall);
     if (result.collided) {
       newBall = result.ball1;
-      collidedBalls.push(result.ball2);
+      collisions.push({
+        originalIndex: i,
+        originalPosition: otherBall.position,
+        newVelocity: result.ball2.velocity,
+      });
     }
   }
 
@@ -296,7 +307,7 @@ export function updateBall(
     newBall.velocity = { x: 0, y: 0 };
   }
 
-  return { ball: newBall, inWater, teleported, collidedBalls };
+  return { ball: newBall, inWater, teleported, collisions };
 }
 
 export function checkHole(ball: Ball, level: Level): boolean {

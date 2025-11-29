@@ -192,6 +192,7 @@ export default function GameCanvas({
 
   useEffect(() => {
     if (externalVelocity && !scored) {
+      console.log('Applying external velocity to my ball:', externalVelocity);
       setBall(prev => ({
         ...prev,
         velocity: {
@@ -285,14 +286,16 @@ export default function GameCanvas({
         
         setBallRotation(prev => getBallRotation(result.ball, prev));
 
-        if (result.collidedBalls.length > 0) {
-          result.collidedBalls.forEach((collidedBall, index) => {
-            const hitPlayer = otherPlayers.find(p => 
-              Math.abs(p.odosition.x - otherBalls[index]?.position.x) < 1 &&
-              Math.abs(p.odosition.y - otherBalls[index]?.position.y) < 1
-            );
+        // Handle ball-to-ball collisions
+        if (result.collisions.length > 0) {
+          const otherPlayersNotFinished = otherPlayers.filter(p => !p.hasFinished);
+          
+          result.collisions.forEach(collision => {
+            // The index in collisions corresponds to the index in otherBalls/otherPlayersNotFinished
+            const hitPlayer = otherPlayersNotFinished[collision.originalIndex];
             if (hitPlayer) {
-              onBallCollision(hitPlayer.oderId, collidedBall.velocity);
+              console.log('Collision! Broadcasting to:', hitPlayer.oderId, 'velocity:', collision.newVelocity);
+              onBallCollision(hitPlayer.oderId, collision.newVelocity);
             }
           });
         }
