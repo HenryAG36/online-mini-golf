@@ -4,6 +4,9 @@ const FRICTION = 0.985;
 const MIN_VELOCITY = 0.15;
 const WALL_BOUNCE = 0.75;
 const MAX_POWER = 15;
+const HOLE_GRAVITY_RADIUS = 60;
+const HOLE_GRAVITY_STRENGTH = 0.15;
+const BALL_BOUNCE = 0.8;
 
 export function createBall(x: number, y: number): Ball {
   return {
@@ -29,11 +32,71 @@ export function isBallMoving(ball: Ball): boolean {
   return speed > MIN_VELOCITY;
 }
 
+// Ball-to-ball collision detection and response
+export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ball2: Ball } {
+  const dx = ball2.position.x - ball1.position.x;
+  const dy = ball2.position.y - ball1.position.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  const minDist = ball1.radius + ball2.radius;
+
+  if (dist < minDist && dist > 0) {
+    // Collision detected - calculate collision response
+    const nx = dx / dist;
+    const ny = dy / dist;
+
+    // Relative velocity
+    const dvx = ball1.velocity.x - ball2.velocity.x;
+    const dvy = ball1.velocity.y - ball2.velocity.y;
+
+    // Relative velocity along collision normal
+    const dvn = dvx * nx + dvy * ny;
+
+    // Don't resolve if balls are moving apart
+    if (dvn > 0) {
+      // Collision impulse (assuming equal mass)
+      const impulse = dvn * BALL_BOUNCE;
+
+      // Separate balls
+      const overlap = minDist - dist;
+      const separationX = (overlap / 2 + 1) * nx;
+      const separationY = (overlap / 2 + 1) * ny;
+
+      return {
+        ball1: {
+          ...ball1,
+          position: {
+            x: ball1.position.x - separationX,
+            y: ball1.position.y - separationY,
+          },
+          velocity: {
+            x: ball1.velocity.x - impulse * nx,
+            y: ball1.velocity.y - impulse * ny,
+          },
+        },
+        ball2: {
+          ...ball2,
+          position: {
+            x: ball2.position.x + separationX,
+            y: ball2.position.y + separationY,
+          },
+          velocity: {
+            x: ball2.velocity.x + impulse * nx,
+            y: ball2.velocity.y + impulse * ny,
+          },
+        },
+      };
+    }
+  }
+
+  return { ball1, ball2 };
+}
+
 export function updateBall(
   ball: Ball,
   level: Level,
   windmillAngles: Map<number, number>,
-  movingWallOffsets: Map<number, number>
+  movingWallOffsets: Map<number, number>,
+  otherBalls: Ball[] = []
 ): { ball: Ball; inWater: boolean; teleported: boolean } {
   let newBall = { ...ball };
   let inWater = false;
@@ -45,11 +108,35 @@ export function updateBall(
     y: newBall.position.y + newBall.velocity.y,
   };
 
+  // Apply hole gravity
+  const holePos = level.hole.position;
+  const toHoleX = holePos.x - newBall.position.x;
+  const toHoleY = holePos.y - newBall.position.y;
+  const distToHole = Math.sqrt(toHoleX * toHoleX + toHoleY * toHoleY);
+  
+  if (distToHole < HOLE_GRAVITY_RADIUS && distToHole > 0) {
+    // Gravity gets stronger as ball gets closer
+    const gravityStrength = HOLE_GRAVITY_STRENGTH * (1 - distToHole / HOLE_GRAVITY_RADIUS);
+    const gravityX = (toHoleX / distToHole) * gravityStrength;
+    const gravityY = (toHoleY / distToHole) * gravityStrength;
+    
+    newBall.velocity = {
+      x: newBall.velocity.x + gravityX,
+      y: newBall.velocity.y + gravityY,
+    };
+  }
+
   // Apply friction
   newBall.velocity = {
     x: newBall.velocity.x * FRICTION,
     y: newBall.velocity.y * FRICTION,
   };
+
+  // Check collisions with other balls
+  for (const otherBall of otherBalls) {
+    const result = handleBallCollision(newBall, otherBall);
+    newBall = result.ball1;
+  }
 
   // Check obstacles
   for (let i = 0; i < level.obstacles.length; i++) {
@@ -236,7 +323,17 @@ export function checkHole(ball: Ball, level: Level): boolean {
   const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
   
   // Ball needs to be close enough and slow enough to go in
-  return dist < level.hole.radius && speed < 4;
+  return dist < level.hole.radius && speed < 5;
+}
+
+// Get ball rotation angle based on velocity
+export function getBallRotation(ball: Ball, previousRotation: number): number {
+  const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
+  if (speed < 0.1) return previousRotation;
+  
+  // Calculate rotation based on distance traveled
+  const rotationSpeed = speed / ball.radius;
+  return previousRotation + rotationSpeed;
 }
 
 // Utility functions

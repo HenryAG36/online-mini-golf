@@ -2,9 +2,19 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import Pusher from 'pusher-js';
-import { Player } from '../types';
+import { Player, Vector2 } from '../types';
 import { levels, PLAYER_COLORS } from '../levels';
 import { v4 as uuidv4 } from 'uuid';
+
+interface BallState {
+  position: Vector2;
+  velocity: Vector2;
+}
+
+interface PlayerWithBall extends Player {
+  ballState: BallState;
+  hasFinishedHole: boolean;
+}
 
 interface GameContextType {
   // Connection state
@@ -15,7 +25,7 @@ interface GameContextType {
   error: string | null;
   
   // Game state
-  players: Player[];
+  players: PlayerWithBall[];
   currentPlayerIndex: number;
   currentLevel: number;
   gamePhase: 'lobby' | 'playing' | 'results';
@@ -25,7 +35,7 @@ interface GameContextType {
   joinRoom: (code: string, playerName: string) => Promise<void>;
   leaveRoom: () => void;
   startGame: () => void;
-  recordShot: (strokes: number) => void;
+  updateBallPosition: (position: Vector2, velocity: Vector2) => void;
   completeHole: (strokes: number) => void;
   nextLevel: () => void;
   toggleReady: () => void;
@@ -45,7 +55,6 @@ interface GameProviderProps {
   children: React.ReactNode;
 }
 
-// Generate a simple room code
 function generateRoomCode(): string {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -55,8 +64,7 @@ function generateRoomCode(): string {
   return code;
 }
 
-// Assign consistent colors based on player index
-function assignPlayerColors(players: Player[]): Player[] {
+function assignPlayerColors(players: PlayerWithBall[]): PlayerWithBall[] {
   return players.map((p, i) => ({
     ...p,
     color: PLAYER_COLORS[i % PLAYER_COLORS.length],
@@ -65,7 +73,6 @@ function assignPlayerColors(players: Player[]): Player[] {
 
 export function GameProvider({ children }: GameProviderProps) {
   const [playerId] = useState(() => {
-    // Try to get existing ID from sessionStorage for page refreshes
     if (typeof window !== 'undefined') {
       const existing = sessionStorage.getItem('minigolf-player-id');
       if (existing) return existing;
@@ -80,104 +87,124 @@ export function GameProvider({ children }: GameProviderProps) {
   const [isHost, setIsHost] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [players, setPlayers] = useState<Player[]>([]);
+  const [players, setPlayers] = useState<PlayerWithBall[]>([]);
   const [currentPlayerIndex, setCurrentPlayerIndex] = useState(0);
   const [currentLevel, setCurrentLevel] = useState(0);
   const [gamePhase, setGamePhase] = useState<'lobby' | 'playing' | 'results'>('lobby');
   
   const pusherRef = useRef<Pusher | null>(null);
   const channelRef = useRef<ReturnType<Pusher['subscribe']> | null>(null);
+  const lastBallUpdateRef = useRef<number>(0);
 
-  // Check if Pusher is configured
   const isPusherConfigured = typeof window !== 'undefined' && 
     process.env.NEXT_PUBLIC_PUSHER_KEY && 
     process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
-  // Initialize Pusher connection
-  const initPusher = useCallback((code: string, currentPlayerId: string) => {
+  const initPusher = useCallback((code: string) => {
     if (!isPusherConfigured) {
-      // Use local-only mode
       setIsConnected(true);
       return;
     }
 
-    // Disconnect existing connection
     if (pusherRef.current) {
       pusherRef.current.disconnect();
     }
 
-    console.log('Initializing Pusher for room:', code);
-    
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
     });
 
     pusherRef.current = pusher;
-
     const channel = pusher.subscribe(`game-${code}`);
     channelRef.current = channel;
 
     channel.bind('pusher:subscription_succeeded', () => {
-      console.log('Pusher subscription succeeded');
       setIsConnected(true);
     });
 
     channel.bind('player-joined', (data: { player: Player; players: Player[] }) => {
-      console.log('Player joined event received:', data);
-      // Update players list with consistent colors
-      setPlayers(assignPlayerColors(data.players));
+      setPlayers(prev => {
+        const newPlayers: PlayerWithBall[] = data.players.map(p => {
+          const existing = prev.find(ep => ep.id === p.id);
+          return {
+            ...p,
+            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+            hasFinishedHole: existing?.hasFinishedHole || false,
+          };
+        });
+        return assignPlayerColors(newPlayers);
+      });
     });
 
     channel.bind('player-left', (data: { playerId: string; players: Player[] }) => {
-      console.log('Player left event received:', data);
-      setPlayers(assignPlayerColors(data.players));
+      setPlayers(prev => {
+        const newPlayers: PlayerWithBall[] = data.players.map(p => {
+          const existing = prev.find(ep => ep.id === p.id);
+          return {
+            ...p,
+            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+            hasFinishedHole: existing?.hasFinishedHole || false,
+          };
+        });
+        return assignPlayerColors(newPlayers);
+      });
     });
 
     channel.bind('player-ready', (data: { playerId: string; isReady: boolean }) => {
-      console.log('Player ready event received:', data);
       setPlayers(prev => prev.map(p => 
         p.id === data.playerId ? { ...p, isReady: data.isReady } : p
       ));
     });
 
-    channel.bind('game-started', (data: { players: Player[] }) => {
-      console.log('Game started event received:', data);
+    channel.bind('game-started', (data: { players: Player[]; level: number }) => {
+      const level = levels[data.level || 0];
       setGamePhase('playing');
-      setCurrentLevel(0);
+      setCurrentLevel(data.level || 0);
       setCurrentPlayerIndex(0);
-      if (data.players) {
-        setPlayers(assignPlayerColors(data.players.map(p => ({ ...p, scores: [] }))));
-      }
+      setPlayers(prev => assignPlayerColors(prev.map(p => ({
+        ...p,
+        scores: [],
+        hasFinishedHole: false,
+        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+      }))));
     });
 
-    channel.bind('shot-recorded', (data: { playerId: string; strokes: number }) => {
-      console.log('Shot recorded:', data);
+    // Real-time ball position updates
+    channel.bind('ball-update', (data: { playerId: string; position: Vector2; velocity: Vector2 }) => {
+      setPlayers(prev => prev.map(p => 
+        p.id === data.playerId 
+          ? { ...p, ballState: { position: data.position, velocity: data.velocity } }
+          : p
+      ));
     });
 
-    channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number; nextPlayerIndex: number; allComplete: boolean }) => {
-      console.log('Hole completed event received:', data);
-      
+    channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number }) => {
       setPlayers(prev => prev.map(p => {
         if (p.id === data.playerId) {
           const newScores = [...p.scores];
           newScores[data.currentLevel] = data.strokes;
-          return { ...p, scores: newScores };
+          return { ...p, scores: newScores, hasFinishedHole: true };
         }
         return p;
       }));
-      
-      if (!data.allComplete) {
-        setCurrentPlayerIndex(data.nextPlayerIndex);
-      }
+    });
+
+    channel.bind('all-finished', (data: { level: number }) => {
+      // All players finished, ready for next level
     });
 
     channel.bind('next-level', (data: { level: number }) => {
-      console.log('Next level event received:', data);
       if (data.level >= levels.length) {
         setGamePhase('results');
       } else {
+        const level = levels[data.level];
         setCurrentLevel(data.level);
         setCurrentPlayerIndex(0);
+        setPlayers(prev => prev.map(p => ({
+          ...p,
+          hasFinishedHole: false,
+          ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+        })));
       }
     });
 
@@ -185,17 +212,8 @@ export function GameProvider({ children }: GameProviderProps) {
       console.error('Pusher error:', err);
       setError('Connection error. Please try again.');
     });
-
-    pusher.connection.bind('connected', () => {
-      console.log('Pusher connected');
-    });
-
-    pusher.connection.bind('disconnected', () => {
-      console.log('Pusher disconnected');
-    });
   }, [isPusherConfigured]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (channelRef.current) {
@@ -208,15 +226,10 @@ export function GameProvider({ children }: GameProviderProps) {
   }, []);
 
   const sendEvent = useCallback(async (eventName: string, data: Record<string, unknown>) => {
-    if (!roomCode) return;
-
-    if (!isPusherConfigured) {
-      // Local-only mode: directly update state
-      return;
-    }
+    if (!roomCode || !isPusherConfigured) return;
 
     try {
-      const response = await fetch('/api/pusher/trigger', {
+      await fetch('/api/pusher/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -225,10 +238,6 @@ export function GameProvider({ children }: GameProviderProps) {
           data,
         }),
       });
-      
-      if (!response.ok) {
-        console.error('Failed to send event:', await response.text());
-      }
     } catch (err) {
       console.error('Failed to send event:', err);
     }
@@ -237,28 +246,27 @@ export function GameProvider({ children }: GameProviderProps) {
   const createRoom = useCallback(async (playerName: string): Promise<string> => {
     const code = generateRoomCode();
     
-    const newPlayer: Player = {
+    const newPlayer: PlayerWithBall = {
       id: playerId,
       name: playerName,
       color: PLAYER_COLORS[0],
       scores: [],
-      isReady: true, // Host is always ready
+      isReady: true,
+      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+      hasFinishedHole: false,
     };
     
-    // Initialize Pusher first so we receive events
-    initPusher(code, playerId);
-    
+    initPusher(code);
     setRoomCode(code);
     setIsHost(true);
     setPlayers([newPlayer]);
     
-    // Register room and player on server
     if (isPusherConfigured) {
       try {
         await fetch('/api/rooms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, player: newPlayer }),
+          body: JSON.stringify({ code, player: { ...newPlayer, ballState: undefined, hasFinishedHole: undefined } }),
         });
       } catch (err) {
         console.error('Failed to create room on server:', err);
@@ -271,23 +279,23 @@ export function GameProvider({ children }: GameProviderProps) {
   const joinRoom = useCallback(async (code: string, playerName: string): Promise<void> => {
     setError(null);
     
-    const newPlayer: Player = {
+    const newPlayer: PlayerWithBall = {
       id: playerId,
       name: playerName,
-      color: PLAYER_COLORS[0], // Will be reassigned
+      color: PLAYER_COLORS[0],
       scores: [],
       isReady: false,
+      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+      hasFinishedHole: false,
     };
 
-    // Initialize Pusher first so we receive the join confirmation
-    initPusher(code, playerId);
+    initPusher(code);
 
     if (isPusherConfigured) {
-      // Verify room exists and join
       const response = await fetch(`/api/rooms/${code}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: newPlayer }),
+        body: JSON.stringify({ player: { ...newPlayer, ballState: undefined, hasFinishedHole: undefined } }),
       });
 
       if (!response.ok) {
@@ -296,10 +304,13 @@ export function GameProvider({ children }: GameProviderProps) {
       }
 
       const data = await response.json();
-      // Set players with consistent colors
-      setPlayers(assignPlayerColors(data.players));
+      const playersWithBall: PlayerWithBall[] = data.players.map((p: Player) => ({
+        ...p,
+        ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+        hasFinishedHole: false,
+      }));
+      setPlayers(assignPlayerColors(playersWithBall));
     } else {
-      // Local mode - just add player
       setPlayers(prev => assignPlayerColors([...prev, newPlayer]));
     }
 
@@ -316,12 +327,8 @@ export function GameProvider({ children }: GameProviderProps) {
       }).catch(err => console.error('Failed to leave room:', err));
     }
 
-    if (channelRef.current) {
-      channelRef.current.unbind_all();
-    }
-    if (pusherRef.current) {
-      pusherRef.current.disconnect();
-    }
+    if (channelRef.current) channelRef.current.unbind_all();
+    if (pusherRef.current) pusherRef.current.disconnect();
 
     setRoomCode(null);
     setIsHost(false);
@@ -338,7 +345,6 @@ export function GameProvider({ children }: GameProviderProps) {
       const updated = prev.map(p => {
         if (p.id === playerId) {
           const newReady = !p.isReady;
-          // Send event after state update
           sendEvent('player-ready', { playerId, isReady: newReady });
           return { ...p, isReady: newReady };
         }
@@ -351,55 +357,61 @@ export function GameProvider({ children }: GameProviderProps) {
   const startGame = useCallback(() => {
     if (!isHost) return;
     
-    const resetPlayers = players.map(p => ({ ...p, scores: [] }));
+    const level = levels[0];
+    const resetPlayers = players.map(p => ({ 
+      ...p, 
+      scores: [],
+      hasFinishedHole: false,
+      ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+    }));
     
     setGamePhase('playing');
     setCurrentLevel(0);
     setCurrentPlayerIndex(0);
     setPlayers(resetPlayers);
     
-    sendEvent('game-started', { players: resetPlayers });
+    sendEvent('game-started', { players: resetPlayers.map(p => ({ ...p, ballState: undefined, hasFinishedHole: undefined })), level: 0 });
   }, [isHost, players, sendEvent]);
 
-  const recordShot = useCallback((strokes: number) => {
-    sendEvent('shot-recorded', { playerId, strokes });
+  const updateBallPosition = useCallback((position: Vector2, velocity: Vector2) => {
+    // Throttle updates to ~20fps for network efficiency
+    const now = performance.now();
+    if (now - lastBallUpdateRef.current < 50) return;
+    lastBallUpdateRef.current = now;
+
+    // Update local state
+    setPlayers(prev => prev.map(p => 
+      p.id === playerId 
+        ? { ...p, ballState: { position, velocity } }
+        : p
+    ));
+
+    // Broadcast to other players
+    sendEvent('ball-update', { playerId, position, velocity });
   }, [playerId, sendEvent]);
 
   const completeHole = useCallback((strokes: number) => {
-    // Update local state
     setPlayers(prev => {
       const updated = prev.map(p => {
         if (p.id === playerId) {
           const newScores = [...p.scores];
           newScores[currentLevel] = strokes;
-          return { ...p, scores: newScores };
+          return { ...p, scores: newScores, hasFinishedHole: true };
         }
         return p;
       });
       
-      // Calculate next player
-      const currentPlayerPos = updated.findIndex(p => p.id === playerId);
-      const nextIndex = (currentPlayerPos + 1) % updated.length;
+      // Check if all players have finished
+      const allFinished = updated.every(p => p.hasFinishedHole);
       
-      // Check if all players have completed this hole
-      const allComplete = updated.every(p => p.scores[currentLevel] !== undefined);
-      
-      // Send event with all info
-      sendEvent('hole-completed', { 
-        playerId, 
-        strokes, 
-        currentLevel,
-        nextPlayerIndex: nextIndex,
-        allComplete
-      });
-      
-      // Update turn locally if not all complete
-      if (!allComplete) {
-        setCurrentPlayerIndex(nextIndex);
+      if (allFinished) {
+        sendEvent('all-finished', { level: currentLevel });
       }
       
       return updated;
     });
+
+    sendEvent('hole-completed', { playerId, strokes, currentLevel });
   }, [playerId, currentLevel, sendEvent]);
 
   const nextLevel = useCallback(() => {
@@ -408,8 +420,14 @@ export function GameProvider({ children }: GameProviderProps) {
     if (next >= levels.length) {
       setGamePhase('results');
     } else {
+      const level = levels[next];
       setCurrentLevel(next);
       setCurrentPlayerIndex(0);
+      setPlayers(prev => prev.map(p => ({
+        ...p,
+        hasFinishedHole: false,
+        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+      })));
     }
     
     sendEvent('next-level', { level: next });
@@ -430,7 +448,7 @@ export function GameProvider({ children }: GameProviderProps) {
       joinRoom,
       leaveRoom,
       startGame,
-      recordShot,
+      updateBallPosition,
       completeHole,
       nextLevel,
       toggleReady,

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
 import GameCanvas from './components/GameCanvas';
 import { levels, PLAYER_COLORS } from './levels';
@@ -12,14 +12,13 @@ function GameContent() {
     roomCode,
     isHost,
     players,
-    currentPlayerIndex,
     currentLevel,
     gamePhase,
     createRoom,
     joinRoom,
     leaveRoom,
     startGame,
-    recordShot,
+    updateBallPosition,
     completeHole,
     nextLevel,
     toggleReady,
@@ -30,12 +29,24 @@ function GameContent() {
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [holeComplete, setHoleComplete] = useState(false);
-  const [holeStrokes, setHoleStrokes] = useState(0);
 
-  const currentPlayer = players[currentPlayerIndex];
   const myPlayer = players.find(p => p.id === playerId);
-  const isMyTurn = currentPlayer?.id === playerId;
+  const allPlayersFinished = players.length > 0 && players.every(p => p.hasFinishedHole);
+  const myHasFinished = myPlayer?.hasFinishedHole || false;
+
+  // Get other players' ball states for rendering
+  const otherPlayerBalls = useMemo(() => {
+    return players
+      .filter(p => p.id !== playerId)
+      .map(p => ({
+        oderId: p.id,
+        odosition: p.ballState.position,
+        velocity: p.ballState.velocity,
+        color: p.color,
+        name: p.name,
+        hasFinished: p.hasFinishedHole,
+      }));
+  }, [players, playerId]);
 
   const handleCreate = async () => {
     if (!playerName.trim()) {
@@ -72,13 +83,10 @@ function GameContent() {
   };
 
   const handleHoleComplete = (strokes: number) => {
-    setHoleStrokes(strokes);
-    setHoleComplete(true);
     completeHole(strokes);
   };
 
   const handleNextHole = () => {
-    setHoleComplete(false);
     nextLevel();
   };
 
@@ -163,7 +171,7 @@ function GameContent() {
           </div>
           <div className={styles.feature}>
             <span className={styles.featureIcon}>👥</span>
-            <span>Multiplayer</span>
+            <span>Real-time</span>
           </div>
         </div>
       </div>
@@ -172,8 +180,6 @@ function GameContent() {
 
   // Waiting Room
   if (gamePhase === 'lobby' && roomCode) {
-    const allReady = players.length >= 1 && players.every(p => p.isReady || p.id === playerId);
-
     return (
       <div className={styles.container}>
         <div className={styles.waitingRoom}>
@@ -218,7 +224,6 @@ function GameContent() {
               </div>
             ))}
             
-            {/* Empty slots */}
             {Array.from({ length: 4 - players.length }).map((_, i) => (
               <div key={`empty-${i}`} className={styles.emptySlot}>
                 <div className={styles.emptyAvatar}>?</div>
@@ -256,36 +261,55 @@ function GameContent() {
   if (gamePhase === 'playing') {
     const level = levels[currentLevel];
 
-    // Hole complete overlay
-    if (holeComplete) {
+    // Show "Next Hole" screen when all players finished
+    if (allPlayersFinished) {
       const par = level.par;
-      const diff = holeStrokes - par;
-      let scoreText = '';
-      if (diff === -3) scoreText = 'Albatross!';
-      else if (diff === -2) scoreText = 'Eagle!';
-      else if (diff === -1) scoreText = 'Birdie!';
-      else if (diff === 0) scoreText = 'Par';
-      else if (diff === 1) scoreText = 'Bogey';
-      else if (diff === 2) scoreText = 'Double Bogey';
-      else if (diff > 2) scoreText = `+${diff}`;
-      else scoreText = `${diff}`;
 
       return (
         <div className={styles.container}>
           <div className={styles.holeComplete}>
             <div className={styles.holeCompleteCard}>
               <h2 className={styles.holeCompleteTitle}>Hole {currentLevel + 1} Complete!</h2>
-              <div className={styles.scoreDisplay}>
-                <span className={styles.strokesLarge}>{holeStrokes}</span>
-                <span className={styles.scoreText}>{scoreText}</span>
-              </div>
-              <div className={styles.parInfo}>
-                Par {par} • {holeStrokes} stroke{holeStrokes !== 1 ? 's' : ''}
+              
+              <div className={styles.allScores}>
+                {[...players]
+                  .sort((a, b) => (a.scores[currentLevel] || 99) - (b.scores[currentLevel] || 99))
+                  .map((player, index) => {
+                    const strokes = player.scores[currentLevel] || 0;
+                    const diff = strokes - par;
+                    let scoreText = '';
+                    if (diff <= -3) scoreText = 'Albatross!';
+                    else if (diff === -2) scoreText = 'Eagle!';
+                    else if (diff === -1) scoreText = 'Birdie!';
+                    else if (diff === 0) scoreText = 'Par';
+                    else if (diff === 1) scoreText = 'Bogey';
+                    else if (diff === 2) scoreText = 'Double Bogey';
+                    else scoreText = `+${diff}`;
+
+                    return (
+                      <div 
+                        key={player.id} 
+                        className={styles.scoreRow}
+                        style={{ borderLeftColor: player.color }}
+                      >
+                        <span className={styles.scorePosition}>#{index + 1}</span>
+                        <div 
+                          className={styles.scoreAvatar}
+                          style={{ backgroundColor: player.color }}
+                        >
+                          {player.name[0].toUpperCase()}
+                        </div>
+                        <span className={styles.scoreName}>{player.name}</span>
+                        <span className={styles.scoreStrokes}>{strokes}</span>
+                        <span className={styles.scoreLabel}>{scoreText}</span>
+                      </div>
+                    );
+                  })}
               </div>
 
               {players.length > 1 && (
                 <div className={styles.standings}>
-                  <h3>Standings</h3>
+                  <h3>Total Standings</h3>
                   {[...players]
                     .sort((a, b) => getTotalScore(a) - getTotalScore(b))
                     .map((player, index) => (
@@ -304,12 +328,18 @@ function GameContent() {
                 </div>
               )}
 
-              <button 
-                onClick={handleNextHole} 
-                className={styles.primaryButton}
-              >
-                {currentLevel + 1 >= levels.length ? 'See Results' : 'Next Hole →'}
-              </button>
+              {isHost && (
+                <button 
+                  onClick={handleNextHole} 
+                  className={styles.primaryButton}
+                >
+                  {currentLevel + 1 >= levels.length ? 'See Results' : 'Next Hole →'}
+                </button>
+              )}
+              
+              {!isHost && (
+                <p className={styles.waitingHost}>Waiting for host to continue...</p>
+              )}
             </div>
           </div>
         </div>
@@ -324,16 +354,17 @@ function GameContent() {
             Hole {currentLevel + 1} / {levels.length}
           </div>
           
-          <div className={styles.playerTurn}>
-            {players.length > 1 && (
-              <>
-                <div 
-                  className={styles.turnIndicator}
-                  style={{ backgroundColor: currentPlayer?.color }}
-                />
-                <span>{isMyTurn ? 'Your turn' : `${currentPlayer?.name}'s turn`}</span>
-              </>
-            )}
+          <div className={styles.playersStatus}>
+            {players.map(p => (
+              <div 
+                key={p.id}
+                className={`${styles.playerStatus} ${p.hasFinishedHole ? styles.finished : ''}`}
+                style={{ backgroundColor: p.color }}
+                title={`${p.name}${p.hasFinishedHole ? ' - Finished!' : ''}`}
+              >
+                {p.hasFinishedHole ? '✓' : p.name[0]}
+              </div>
+            ))}
           </div>
         </div>
 
@@ -342,23 +373,30 @@ function GameContent() {
           level={level}
           playerColor={myPlayer?.color || PLAYER_COLORS[0]}
           playerName={myPlayer?.name || 'Player'}
-          isMyTurn={isMyTurn || players.length === 1}
-          onShot={recordShot}
+          playerId={playerId}
+          isMyTurn={true}
+          onShot={() => {}}
           onHoleComplete={handleHoleComplete}
-          currentStrokes={myPlayer?.scores[currentLevel] || 0}
+          onBallUpdate={updateBallPosition}
+          otherPlayers={otherPlayerBalls}
+          currentStrokes={0}
+          hasFinishedHole={myHasFinished}
         />
 
-        {/* Scoreboard for multiplayer */}
+        {/* Live scoreboard */}
         {players.length > 1 && (
           <div className={styles.miniScoreboard}>
             {players.map(player => (
               <div 
                 key={player.id}
-                className={`${styles.miniScore} ${player.id === currentPlayer?.id ? styles.active : ''}`}
+                className={`${styles.miniScore} ${player.hasFinishedHole ? styles.finished : ''}`}
                 style={{ borderColor: player.color }}
               >
                 <span className={styles.miniName}>{player.name}</span>
-                <span className={styles.miniTotal}>{getTotalScore(player)}</span>
+                <span className={styles.miniTotal}>
+                  {getTotalScore(player)}
+                  {player.hasFinishedHole && ` (${player.scores[currentLevel]})`}
+                </span>
               </div>
             ))}
           </div>

@@ -3,6 +3,8 @@ export interface Vector2 {
   y: number;
 }
 
+export type { Vector2 as Position };
+
 export interface Ball {
   position: Vector2;
   velocity: Vector2;
