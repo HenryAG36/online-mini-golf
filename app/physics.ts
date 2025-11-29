@@ -1,27 +1,27 @@
 import { Ball, Wall, Obstacle, Level, Vector2, Circle, Rectangle } from './types';
 
-const FRICTION = 0.985;
-const MIN_VELOCITY = 0.15;
-const WALL_BOUNCE = 0.75;
-const MAX_POWER = 12;
-const MIN_POWER = 2;
-const HOLE_GRAVITY_RADIUS = 60;
-const HOLE_GRAVITY_STRENGTH = 0.18;
-const BALL_BOUNCE = 0.5; // 50% energy transfer on ball collision
+const FRICTION = 0.982;
+const MIN_VELOCITY = 0.1;
+const WALL_BOUNCE = 0.6;
+const MAX_POWER = 8;
+const MIN_POWER = 1.5;
+const HOLE_GRAVITY_RADIUS = 40;
+const HOLE_GRAVITY_STRENGTH = 0.12;
+const BALL_BOUNCE = 0.4; // 40% energy transfer on ball collision
+const BALL_RADIUS = 6; // Smaller ball
 
 export function createBall(x: number, y: number): Ball {
   return {
     position: { x, y },
     velocity: { x: 0, y: 0 },
-    radius: 10,
+    radius: BALL_RADIUS,
   };
 }
 
 export function shootBall(ball: Ball, power: number, angle: number): Ball {
-  // Apply a power curve for better control
-  // Map power from 0-1 range to MIN_POWER-MAX_POWER with slight curve
+  // Smoother power curve for better control
   const normalizedPower = Math.max(0, Math.min(1, power));
-  const curvedPower = MIN_POWER + (normalizedPower * normalizedPower * 0.5 + normalizedPower * 0.5) * (MAX_POWER - MIN_POWER);
+  const curvedPower = MIN_POWER + (normalizedPower * 0.7 + normalizedPower * normalizedPower * 0.3) * (MAX_POWER - MIN_POWER);
   
   return {
     ...ball,
@@ -37,7 +37,6 @@ export function isBallMoving(ball: Ball): boolean {
   return speed > MIN_VELOCITY;
 }
 
-// Ball-to-ball collision - returns updated velocities for both balls
 export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ball2: Ball; collided: boolean } {
   const dx = ball2.position.x - ball1.position.x;
   const dy = ball2.position.y - ball1.position.y;
@@ -45,23 +44,15 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
   const minDist = ball1.radius + ball2.radius;
 
   if (dist < minDist && dist > 0) {
-    // Collision normal
     const nx = dx / dist;
     const ny = dy / dist;
 
-    // Relative velocity of ball1 with respect to ball2
     const dvx = ball1.velocity.x - ball2.velocity.x;
     const dvy = ball1.velocity.y - ball2.velocity.y;
-
-    // Relative velocity along collision normal
     const dvn = dvx * nx + dvy * ny;
 
-    // Only resolve if balls are moving toward each other
     if (dvn > 0) {
-      // Impulse magnitude (with energy transfer factor)
       const impulse = dvn * BALL_BOUNCE;
-
-      // Separate balls to avoid overlap
       const overlap = minDist - dist;
       const separationX = (overlap / 2 + 0.5) * nx;
       const separationY = (overlap / 2 + 0.5) * ny;
@@ -109,13 +100,12 @@ export function updateBall(
   let teleported = false;
   const collidedBalls: Ball[] = [];
 
-  // Apply velocity
   newBall.position = {
     x: newBall.position.x + newBall.velocity.x,
     y: newBall.position.y + newBall.velocity.y,
   };
 
-  // Apply hole gravity
+  // Hole gravity
   const holePos = level.hole.position;
   const toHoleX = holePos.x - newBall.position.x;
   const toHoleY = holePos.y - newBall.position.y;
@@ -123,22 +113,18 @@ export function updateBall(
   
   if (distToHole < HOLE_GRAVITY_RADIUS && distToHole > 0) {
     const gravityStrength = HOLE_GRAVITY_STRENGTH * (1 - distToHole / HOLE_GRAVITY_RADIUS);
-    const gravityX = (toHoleX / distToHole) * gravityStrength;
-    const gravityY = (toHoleY / distToHole) * gravityStrength;
-    
     newBall.velocity = {
-      x: newBall.velocity.x + gravityX,
-      y: newBall.velocity.y + gravityY,
+      x: newBall.velocity.x + (toHoleX / distToHole) * gravityStrength,
+      y: newBall.velocity.y + (toHoleY / distToHole) * gravityStrength,
     };
   }
 
-  // Apply friction
   newBall.velocity = {
     x: newBall.velocity.x * FRICTION,
     y: newBall.velocity.y * FRICTION,
   };
 
-  // Check collisions with other balls
+  // Ball collisions
   for (const otherBall of otherBalls) {
     const result = handleBallCollision(newBall, otherBall);
     if (result.collided) {
@@ -147,14 +133,14 @@ export function updateBall(
     }
   }
 
-  // Check obstacles
+  // Obstacles
   for (let i = 0; i < level.obstacles.length; i++) {
     const obstacle = level.obstacles[i];
     
     if (obstacle.type === 'sand') {
       const rect = obstacle.shape as Rectangle;
       if (isPointInRect(newBall.position, rect)) {
-        const friction = obstacle.properties?.friction || 0.95;
+        const friction = obstacle.properties?.friction || 0.92;
         newBall.velocity = {
           x: newBall.velocity.x * friction,
           y: newBall.velocity.y * friction,
@@ -173,7 +159,7 @@ export function updateBall(
       const circle = obstacle.shape as Circle;
       const dist = distance(newBall.position, { x: circle.x, y: circle.y });
       if (dist < newBall.radius + circle.radius) {
-        const bounceFactor = obstacle.properties?.bounceFactor || 1.3;
+        const bounceFactor = obstacle.properties?.bounceFactor || 1.2;
         const normal = normalize({
           x: newBall.position.x - circle.x,
           y: newBall.position.y - circle.y,
@@ -196,7 +182,7 @@ export function updateBall(
       const circle = obstacle.shape as Circle;
       const angle = windmillAngles.get(i) || 0;
       const bladeLength = circle.radius;
-      const bladeWidth = 12;
+      const bladeWidth = 10;
       
       for (let b = 0; b < 4; b++) {
         const bladeAngle = angle + (b * Math.PI / 2);
@@ -213,7 +199,7 @@ export function updateBall(
           newBall.radius
         )) {
           const perpAngle = bladeAngle + Math.PI / 2;
-          const pushForce = 3;
+          const pushForce = 2;
           newBall.velocity = {
             x: newBall.velocity.x + Math.cos(perpAngle) * pushForce,
             y: newBall.velocity.y + Math.sin(perpAngle) * pushForce,
@@ -260,7 +246,7 @@ export function updateBall(
     }
   }
 
-  // Check wall collisions
+  // Wall collisions
   for (const wall of level.walls) {
     const collision = lineCircleCollision(
       wall.start,
@@ -306,7 +292,6 @@ export function updateBall(
     }
   }
 
-  // Stop ball if very slow
   if (!isBallMoving(newBall)) {
     newBall.velocity = { x: 0, y: 0 };
   }
@@ -317,17 +302,16 @@ export function updateBall(
 export function checkHole(ball: Ball, level: Level): boolean {
   const dist = distance(ball.position, level.hole.position);
   const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
-  return dist < level.hole.radius && speed < 5;
+  // Smaller hole radius check
+  return dist < level.hole.radius * 0.7 && speed < 4;
 }
 
 export function getBallRotation(ball: Ball, previousRotation: number): number {
   const speed = Math.sqrt(ball.velocity.x ** 2 + ball.velocity.y ** 2);
   if (speed < 0.1) return previousRotation;
-  const rotationSpeed = speed / ball.radius;
-  return previousRotation + rotationSpeed;
+  return previousRotation + speed / ball.radius;
 }
 
-// Utility functions
 function distance(a: Vector2, b: Vector2): number {
   return Math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2);
 }
@@ -351,16 +335,10 @@ function closestPointOnLine(start: Vector2, end: Vector2, point: Vector2): Vecto
   const dx = end.x - start.x;
   const dy = end.y - start.y;
   const len2 = dx * dx + dy * dy;
-  
   if (len2 === 0) return start;
-  
   let t = ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2;
   t = Math.max(0, Math.min(1, t));
-  
-  return {
-    x: start.x + t * dx,
-    y: start.y + t * dy,
-  };
+  return { x: start.x + t * dx, y: start.y + t * dy };
 }
 
 function lineCircleCollision(
@@ -371,13 +349,11 @@ function lineCircleCollision(
   circleRadius: number
 ): boolean {
   const closest = closestPointOnLine(start, end, circleCenter);
-  const dist = distance(closest, circleCenter);
-  return dist < circleRadius + lineThickness / 2;
+  return distance(closest, circleCenter) < circleRadius + lineThickness / 2;
 }
 
 function rectCircleCollision(rect: Rectangle, circleCenter: Vector2, circleRadius: number): boolean {
   const closestX = Math.max(rect.x, Math.min(circleCenter.x, rect.x + rect.width));
   const closestY = Math.max(rect.y, Math.min(circleCenter.y, rect.y + rect.height));
-  const dist = distance({ x: closestX, y: closestY }, circleCenter);
-  return dist < circleRadius;
+  return distance({ x: closestX, y: closestY }, circleCenter) < circleRadius;
 }
