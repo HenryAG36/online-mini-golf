@@ -14,13 +14,16 @@ function GameContent() {
     isHost,
     players,
     currentLevel,
+    currentPlayerIndex,
     gamePhase,
+    isMyTurn,
     createRoom,
     joinRoom,
     leaveRoom,
     startGame,
     updateBallPosition,
     broadcastCollision,
+    endTurn,
     completeHole,
     nextLevel,
     toggleReady,
@@ -59,8 +62,15 @@ function GameContent() {
         color: p.color,
         name: p.name,
         hasFinished: p.hasFinishedHole,
+        isMoving: p.ballState.isMoving,
       }));
   }, [players, playerId]);
+
+  // Get current player's name for the "waiting" indicator
+  const currentTurnPlayerName = useMemo(() => {
+    const currentPlayer = players[currentPlayerIndex];
+    return currentPlayer?.name || 'Other player';
+  }, [players, currentPlayerIndex]);
 
   const handleCreate = async () => {
     if (!playerName.trim()) {
@@ -396,16 +406,18 @@ function GameContent() {
           playerColor={myPlayer?.color || PLAYER_COLORS[0]}
           playerName={myPlayer?.name || 'Player'}
           playerId={playerId}
-          isMyTurn={true}
+          isMyTurn={isMyTurn}
           onShot={() => {}}
           onHoleComplete={handleHoleComplete}
           onBallUpdate={updateBallPosition}
           onBallCollision={handleBallCollision}
+          onTurnEnd={endTurn}
           otherPlayers={otherPlayerBalls}
           currentStrokes={0}
           hasFinishedHole={myHasFinished}
           externalVelocity={externalVelocity}
           onExternalVelocityApplied={handleExternalVelocityApplied}
+          currentTurnPlayerName={currentTurnPlayerName}
         />
 
         {/* Live scoreboard */}

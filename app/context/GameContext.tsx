@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 interface BallState {
   position: Vector2;
   velocity: Vector2;
+  isMoving: boolean;
 }
 
 interface PlayerWithBall extends Player {
@@ -26,13 +27,14 @@ interface GameContextType {
   currentPlayerIndex: number;
   currentLevel: number;
   gamePhase: 'lobby' | 'playing' | 'results';
+  isMyTurn: boolean;
   createRoom: (playerName: string) => Promise<string>;
   joinRoom: (code: string, playerName: string) => Promise<void>;
   leaveRoom: () => void;
   startGame: () => void;
-  updateBallPosition: (position: Vector2, velocity: Vector2) => void;
-  applyCollisionToMyBall: (velocity: Vector2) => void;
+  updateBallPosition: (position: Vector2, velocity: Vector2, isMoving: boolean) => void;
   broadcastCollision: (targetPlayerId: string, newVelocity: Vector2) => void;
+  endTurn: () => void;
   completeHole: (strokes: number) => void;
   nextLevel: () => void;
   toggleReady: () => void;
@@ -98,6 +100,11 @@ export function GameProvider({ children }: GameProviderProps) {
     process.env.NEXT_PUBLIC_PUSHER_KEY && 
     process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
+  // Check if it's my turn - I'm the current player and haven't finished the hole
+  const myPlayer = players.find(p => p.id === playerId);
+  const currentPlayer = players[currentPlayerIndex];
+  const isMyTurn = currentPlayer?.id === playerId && !myPlayer?.hasFinishedHole;
+
   const initPusher = useCallback((code: string, myPlayerId: string) => {
     if (!isPusherConfigured) {
       setIsConnected(true);
@@ -126,7 +133,7 @@ export function GameProvider({ children }: GameProviderProps) {
           const existing = prev.find(ep => ep.id === p.id);
           return {
             ...p,
-            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, isMoving: false },
             hasFinishedHole: existing?.hasFinishedHole || false,
           };
         });
@@ -140,7 +147,7 @@ export function GameProvider({ children }: GameProviderProps) {
           const existing = prev.find(ep => ep.id === p.id);
           return {
             ...p,
-            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+            ballState: existing?.ballState || { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, isMoving: false },
             hasFinishedHole: existing?.hasFinishedHole || false,
           };
         });
@@ -163,31 +170,32 @@ export function GameProvider({ children }: GameProviderProps) {
         ...p,
         scores: [],
         hasFinishedHole: false,
-        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 }, isMoving: false },
       }))));
     });
 
-    // Real-time ball position updates
-    channel.bind('ball-update', (data: { playerId: string; position: Vector2; velocity: Vector2 }) => {
-      if (data.playerId === myPlayerId) return; // Ignore own updates
+    channel.bind('ball-update', (data: { playerId: string; position: Vector2; velocity: Vector2; isMoving: boolean }) => {
+      if (data.playerId === myPlayerId) return;
       setPlayers(prev => prev.map(p => 
         p.id === data.playerId 
-          ? { ...p, ballState: { position: data.position, velocity: data.velocity } }
+          ? { ...p, ballState: { position: data.position, velocity: data.velocity, isMoving: data.isMoving } }
           : p
       ));
     });
 
-    // Ball collision - when another player hits my ball
     channel.bind('ball-collision', (data: { targetPlayerId: string; newVelocity: Vector2 }) => {
       if (data.targetPlayerId === myPlayerId) {
-        // Someone hit my ball! Apply the velocity
         if (collisionCallbackRef.current) {
           collisionCallbackRef.current(data.newVelocity);
         }
       }
     });
 
-    channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number }) => {
+    channel.bind('turn-ended', (data: { playerId: string; nextPlayerIndex: number }) => {
+      setCurrentPlayerIndex(data.nextPlayerIndex);
+    });
+
+    channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number; nextPlayerIndex: number }) => {
       setPlayers(prev => prev.map(p => {
         if (p.id === data.playerId) {
           const newScores = [...p.scores];
@@ -196,6 +204,7 @@ export function GameProvider({ children }: GameProviderProps) {
         }
         return p;
       }));
+      setCurrentPlayerIndex(data.nextPlayerIndex);
     });
 
     channel.bind('next-level', (data: { level: number }) => {
@@ -208,7 +217,7 @@ export function GameProvider({ children }: GameProviderProps) {
         setPlayers(prev => prev.map(p => ({
           ...p,
           hasFinishedHole: false,
-          ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+          ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 }, isMoving: false },
         })));
       }
     });
@@ -253,7 +262,7 @@ export function GameProvider({ children }: GameProviderProps) {
       color: PLAYER_COLORS[0],
       scores: [],
       isReady: true,
-      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, isMoving: false },
       hasFinishedHole: false,
     };
     
@@ -286,7 +295,7 @@ export function GameProvider({ children }: GameProviderProps) {
       color: PLAYER_COLORS[0],
       scores: [],
       isReady: false,
-      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+      ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, isMoving: false },
       hasFinishedHole: false,
     };
 
@@ -307,7 +316,7 @@ export function GameProvider({ children }: GameProviderProps) {
       const data = await response.json();
       const playersWithBall: PlayerWithBall[] = data.players.map((p: Player) => ({
         ...p,
-        ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } },
+        ballState: { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 }, isMoving: false },
         hasFinishedHole: false,
       }));
       setPlayers(assignPlayerColors(playersWithBall));
@@ -363,7 +372,7 @@ export function GameProvider({ children }: GameProviderProps) {
       ...p, 
       scores: [],
       hasFinishedHole: false,
-      ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+      ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 }, isMoving: false },
     }));
     
     setGamePhase('playing');
@@ -374,43 +383,45 @@ export function GameProvider({ children }: GameProviderProps) {
     sendEvent('game-started', { players: resetPlayers.map(p => ({ id: p.id, name: p.name, color: p.color, scores: [], isReady: p.isReady })), level: 0 });
   }, [isHost, players, sendEvent]);
 
-  const updateBallPosition = useCallback((position: Vector2, velocity: Vector2) => {
+  const updateBallPosition = useCallback((position: Vector2, velocity: Vector2, isMoving: boolean) => {
     const now = performance.now();
     if (now - lastBallUpdateRef.current < 50) return;
     lastBallUpdateRef.current = now;
 
     setPlayers(prev => prev.map(p => 
       p.id === playerId 
-        ? { ...p, ballState: { position, velocity } }
+        ? { ...p, ballState: { position, velocity, isMoving } }
         : p
     ));
 
-    sendEvent('ball-update', { playerId, position, velocity });
+    sendEvent('ball-update', { playerId, position, velocity, isMoving });
   }, [playerId, sendEvent]);
 
-  // Function to apply collision to my own ball (called via callback)
-  const applyCollisionToMyBall = useCallback((velocity: Vector2) => {
-    setPlayers(prev => prev.map(p => {
-      if (p.id === playerId) {
-        return {
-          ...p,
-          ballState: {
-            ...p.ballState,
-            velocity: {
-              x: p.ballState.velocity.x + velocity.x,
-              y: p.ballState.velocity.y + velocity.y,
-            },
-          },
-        };
-      }
-      return p;
-    }));
-  }, [playerId]);
-
-  // Broadcast collision to another player
   const broadcastCollision = useCallback((targetPlayerId: string, newVelocity: Vector2) => {
     sendEvent('ball-collision', { targetPlayerId, newVelocity });
   }, [sendEvent]);
+
+  // End turn - move to next player who hasn't finished
+  const endTurn = useCallback(() => {
+    setPlayers(prev => {
+      // Find next player who hasn't finished
+      let nextIndex = currentPlayerIndex;
+      let attempts = 0;
+      do {
+        nextIndex = (nextIndex + 1) % prev.length;
+        attempts++;
+      } while (prev[nextIndex]?.hasFinishedHole && attempts < prev.length);
+
+      // If all players finished, stay on current
+      if (attempts >= prev.length) {
+        return prev;
+      }
+
+      setCurrentPlayerIndex(nextIndex);
+      sendEvent('turn-ended', { playerId, nextPlayerIndex: nextIndex });
+      return prev;
+    });
+  }, [currentPlayerIndex, playerId, sendEvent]);
 
   const completeHole = useCallback((strokes: number) => {
     setPlayers(prev => {
@@ -423,16 +434,25 @@ export function GameProvider({ children }: GameProviderProps) {
         return p;
       });
       
+      // Find next player who hasn't finished
+      let nextIndex = currentPlayerIndex;
+      let attempts = 0;
+      do {
+        nextIndex = (nextIndex + 1) % updated.length;
+        attempts++;
+      } while (updated[nextIndex]?.hasFinishedHole && attempts < updated.length);
+
+      // If this was the last player, keep index
       const allFinished = updated.every(p => p.hasFinishedHole);
-      if (allFinished) {
-        sendEvent('all-finished', { level: currentLevel });
+      if (!allFinished) {
+        setCurrentPlayerIndex(nextIndex);
       }
+
+      sendEvent('hole-completed', { playerId, strokes, currentLevel, nextPlayerIndex: nextIndex });
       
       return updated;
     });
-
-    sendEvent('hole-completed', { playerId, strokes, currentLevel });
-  }, [playerId, currentLevel, sendEvent]);
+  }, [playerId, currentLevel, currentPlayerIndex, sendEvent]);
 
   const nextLevel = useCallback(() => {
     const next = currentLevel + 1;
@@ -446,17 +466,12 @@ export function GameProvider({ children }: GameProviderProps) {
       setPlayers(prev => prev.map(p => ({
         ...p,
         hasFinishedHole: false,
-        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 } },
+        ballState: { position: { x: level.tee.x, y: level.tee.y }, velocity: { x: 0, y: 0 }, isMoving: false },
       })));
     }
     
     sendEvent('next-level', { level: next });
   }, [currentLevel, sendEvent]);
-
-  // Set the collision callback ref so GameCanvas can register its handler
-  const setCollisionCallback = useCallback((callback: (velocity: Vector2) => void) => {
-    collisionCallbackRef.current = callback;
-  }, []);
 
   return (
     <GameContext.Provider value={{
@@ -469,13 +484,14 @@ export function GameProvider({ children }: GameProviderProps) {
       currentPlayerIndex,
       currentLevel,
       gamePhase,
+      isMyTurn,
       createRoom,
       joinRoom,
       leaveRoom,
       startGame,
       updateBallPosition,
-      applyCollisionToMyBall,
       broadcastCollision,
+      endTurn,
       completeHole,
       nextLevel,
       toggleReady,

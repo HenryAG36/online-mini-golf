@@ -417,4 +417,4 @@ export const levels: Level[] = [
   },
 ];
 
-export const PLAYER_COLORS = ['#4ade80', '#60a5fa', '#f472b6', '#fbbf24'];
+export const PLAYER_COLORS = ['#60a5fa', '#f472b6', '#fbbf24', '#a78bfa'];

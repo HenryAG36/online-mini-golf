@@ -12,6 +12,7 @@ interface PlayerBallState {
   color: string;
   name: string;
   hasFinished: boolean;
+  isMoving: boolean;
 }
 
 interface GameCanvasProps {
@@ -22,20 +23,21 @@ interface GameCanvasProps {
   isMyTurn: boolean;
   onShot: (strokes: number) => void;
   onHoleComplete: (strokes: number) => void;
-  onBallUpdate: (position: Vector2, velocity: Vector2) => void;
+  onBallUpdate: (position: Vector2, velocity: Vector2, isMoving: boolean) => void;
   onBallCollision: (targetPlayerId: string, newVelocity: Vector2) => void;
+  onTurnEnd: () => void;
   otherPlayers: PlayerBallState[];
   currentStrokes: number;
   hasFinishedHole: boolean;
   externalVelocity: Vector2 | null;
   onExternalVelocityApplied: () => void;
+  currentTurnPlayerName: string;
 }
 
 const BALL_RADIUS = 6;
 const HOLE_RADIUS = 10;
 const TILE_SIZE = 30;
 
-// Colors
 const COLORS = {
   grassLight: '#90c965',
   grassDark: '#7bb850',
@@ -48,7 +50,6 @@ const COLORS = {
   shadow: 'rgba(0,0,0,0.2)',
 };
 
-// Draw minimalist top-down 3D ball
 function drawBall(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -57,13 +58,11 @@ function drawBall(
   color: string,
   rotation: number
 ) {
-  // Shadow (directly below, slightly offset)
   ctx.fillStyle = COLORS.shadow;
   ctx.beginPath();
   ctx.ellipse(x + 1, y + 1, radius * 0.9, radius * 0.9, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Main ball - flat color with subtle edge darkening
   const grad = ctx.createRadialGradient(x, y, 0, x, y, radius);
   grad.addColorStop(0, color);
   grad.addColorStop(0.85, color);
@@ -74,23 +73,19 @@ function drawBall(
   ctx.arc(x, y, radius, 0, Math.PI * 2);
   ctx.fill();
 
-  // Outline
   ctx.strokeStyle = darkenColor(color, 50);
   ctx.lineWidth = 1.5;
   ctx.stroke();
 
-  // Simple dimple pattern (top-down view, shows rotation)
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(rotation);
   
   ctx.fillStyle = darkenColor(color, 20);
-  // Center dimple
   ctx.beginPath();
   ctx.arc(0, 0, radius * 0.15, 0, Math.PI * 2);
   ctx.fill();
   
-  // Ring of dimples
   for (let i = 0; i < 6; i++) {
     const angle = (i / 6) * Math.PI * 2;
     const dx = Math.cos(angle) * radius * 0.55;
@@ -103,7 +98,6 @@ function drawBall(
   ctx.restore();
 }
 
-// Darken a hex color
 function darkenColor(hex: string, amount: number): string {
   const num = parseInt(hex.replace('#', ''), 16);
   const r = Math.max(0, (num >> 16) - amount);
@@ -112,7 +106,6 @@ function darkenColor(hex: string, amount: number): string {
   return `rgb(${r},${g},${b})`;
 }
 
-// Draw chess-tile grass pattern
 function drawChessGrass(
   ctx: CanvasRenderingContext2D,
   bounds: { x: number; y: number; width: number; height: number }
@@ -129,19 +122,58 @@ function drawChessGrass(
   }
 }
 
+// Draw tapered shot indicator line
+function drawShotIndicator(
+  ctx: CanvasRenderingContext2D,
+  startX: number,
+  startY: number,
+  endX: number,
+  endY: number,
+  startWidth: number
+) {
+  const dx = endX - startX;
+  const dy = endY - startY;
+  const length = Math.sqrt(dx * dx + dy * dy);
+  if (length < 5) return;
+
+  const angle = Math.atan2(dy, dx);
+  const perpX = Math.cos(angle + Math.PI / 2);
+  const perpY = Math.sin(angle + Math.PI / 2);
+
+  // Create tapered shape - thick at start, thin at end
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+  ctx.lineWidth = 1;
+
+  ctx.beginPath();
+  // Start (thick end) - left side
+  ctx.moveTo(startX + perpX * startWidth / 2, startY + perpY * startWidth / 2);
+  // End point (tapered to a point)
+  ctx.lineTo(endX, endY);
+  // Start (thick end) - right side
+  ctx.lineTo(startX - perpX * startWidth / 2, startY - perpY * startWidth / 2);
+  ctx.closePath();
+  
+  ctx.fill();
+  ctx.stroke();
+}
+
 export default function GameCanvas({
   level,
   playerColor,
   playerId,
+  isMyTurn,
   onShot,
   onHoleComplete,
   onBallUpdate,
   onBallCollision,
+  onTurnEnd,
   otherPlayers,
   currentStrokes,
   hasFinishedHole,
   externalVelocity,
   onExternalVelocityApplied,
+  currentTurnPlayerName,
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [ball, setBall] = useState<Ball>(() => createBall(level.tee.x, level.tee.y));
@@ -156,8 +188,8 @@ export default function GameCanvas({
   const [showSplash, setShowSplash] = useState(false);
   const [ballRotation, setBallRotation] = useState(0);
   const lastBroadcastRef = useRef<number>(0);
+  const wasRollingRef = useRef(false);
 
-  // Apply external velocity (from collision)
   useEffect(() => {
     if (externalVelocity && !scored) {
       setBall(prev => ({
@@ -172,7 +204,6 @@ export default function GameCanvas({
     }
   }, [externalVelocity, scored, onExternalVelocityApplied]);
 
-  // Reset ball when level changes
   useEffect(() => {
     setBall(createBall(level.tee.x, level.tee.y));
     setStrokes(currentStrokes);
@@ -182,7 +213,6 @@ export default function GameCanvas({
     setBallRotation(0);
   }, [level.id, level.tee.x, level.tee.y, currentStrokes, hasFinishedHole]);
 
-  // Animation loop for obstacles
   useEffect(() => {
     let animationFrame: number;
     let lastTime = performance.now();
@@ -236,7 +266,6 @@ export default function GameCanvas({
     return () => cancelAnimationFrame(animationFrame);
   }, [level.obstacles]);
 
-  // Physics update loop
   useEffect(() => {
     if (!isRolling || scored) return;
 
@@ -256,16 +285,13 @@ export default function GameCanvas({
         
         setBallRotation(prev => getBallRotation(result.ball, prev));
 
-        // Broadcast collision to other players
         if (result.collidedBalls.length > 0) {
           result.collidedBalls.forEach((collidedBall, index) => {
-            // Find which player this ball belongs to
             const hitPlayer = otherPlayers.find(p => 
               Math.abs(p.odosition.x - otherBalls[index]?.position.x) < 1 &&
               Math.abs(p.odosition.y - otherBalls[index]?.position.y) < 1
             );
             if (hitPlayer) {
-              // Send the velocity change to that player
               onBallCollision(hitPlayer.oderId, collidedBall.velocity);
             }
           });
@@ -290,7 +316,7 @@ export default function GameCanvas({
             setTimeout(() => setShowSplash(false), 500);
             setStrokes(s => s + 1);
             setIsRolling(false);
-            onBallUpdate(level.tee, { x: 0, y: 0 });
+            onBallUpdate(level.tee, { x: 0, y: 0 }, false);
             return createBall(level.tee.x, level.tee.y);
           }
         }
@@ -305,14 +331,20 @@ export default function GameCanvas({
         }
         
         const now = performance.now();
+        const stillMoving = isBallMoving(result.ball);
+        
         if (now - lastBroadcastRef.current > 33) {
-          onBallUpdate(result.ball.position, result.ball.velocity);
+          onBallUpdate(result.ball.position, result.ball.velocity, stillMoving);
           lastBroadcastRef.current = now;
         }
         
-        if (!isBallMoving(result.ball)) {
+        if (!stillMoving) {
           setIsRolling(false);
-          onBallUpdate(result.ball.position, { x: 0, y: 0 });
+          onBallUpdate(result.ball.position, { x: 0, y: 0 }, false);
+          // End turn when ball stops
+          setTimeout(() => {
+            onTurnEnd();
+          }, 100);
           return { ...result.ball, velocity: { x: 0, y: 0 } };
         }
         
@@ -324,9 +356,9 @@ export default function GameCanvas({
 
     animationFrame = requestAnimationFrame(physicsLoop);
     return () => cancelAnimationFrame(animationFrame);
-  }, [isRolling, scored, level, windmillAngles, movingWallOffsets, strokes, onHoleComplete, onBallUpdate, onBallCollision, otherPlayers]);
+  }, [isRolling, scored, level, windmillAngles, movingWallOffsets, strokes, onHoleComplete, onBallUpdate, onBallCollision, onTurnEnd, otherPlayers]);
 
-  // Draw the game
+  // Draw
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -334,11 +366,9 @@ export default function GameCanvas({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Background
     ctx.fillStyle = '#2d4a3e';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw course with clipping
     ctx.save();
     ctx.beginPath();
     ctx.moveTo(level.walls[0].start.x, level.walls[0].start.y);
@@ -347,13 +377,10 @@ export default function GameCanvas({
     });
     ctx.closePath();
     ctx.clip();
-    
-    // Chess-tile grass
     drawChessGrass(ctx, level.bounds);
-    
     ctx.restore();
 
-    // Draw obstacles
+    // Obstacles
     level.obstacles.forEach((obstacle, index) => {
       if (obstacle.type === 'sand') {
         const rect = obstacle.shape as Rectangle;
@@ -373,7 +400,6 @@ export default function GameCanvas({
         ctx.fillStyle = COLORS.water;
         ctx.fillRect(rect.x, rect.y, rect.width, rect.height);
         
-        // Simple wave lines
         ctx.strokeStyle = COLORS.waterDark;
         ctx.lineWidth = 1.5;
         for (let y = rect.y + 8; y < rect.y + rect.height; y += 12) {
@@ -402,17 +428,14 @@ export default function GameCanvas({
       
       if (obstacle.type === 'bumper') {
         const circle = obstacle.shape as Circle;
-        
         ctx.fillStyle = COLORS.shadow;
         ctx.beginPath();
         ctx.arc(circle.x + 2, circle.y + 2, circle.radius, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.fillStyle = '#e84393';
         ctx.beginPath();
         ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.strokeStyle = '#a02d6b';
         ctx.lineWidth = 2;
         ctx.stroke();
@@ -422,13 +445,11 @@ export default function GameCanvas({
         const circle = obstacle.shape as Circle;
         const angle = windmillAngles.get(index) || 0;
         
-        // Shadow
         ctx.fillStyle = COLORS.shadow;
         ctx.beginPath();
         ctx.arc(circle.x + 2, circle.y + 2, 10, 0, Math.PI * 2);
         ctx.fill();
         
-        // Blades
         ctx.fillStyle = '#78909c';
         for (let i = 0; i < 4; i++) {
           const bladeAngle = angle + (i * Math.PI / 2);
@@ -439,7 +460,6 @@ export default function GameCanvas({
           ctx.restore();
         }
         
-        // Hub
         ctx.fillStyle = '#546e7a';
         ctx.beginPath();
         ctx.arc(circle.x, circle.y, 10, 0, Math.PI * 2);
@@ -455,7 +475,6 @@ export default function GameCanvas({
         
         ctx.fillStyle = COLORS.shadow;
         ctx.fillRect(rect.x + 2, rect.y + offset + 2, rect.width, rect.height);
-        
         ctx.fillStyle = '#ff9800';
         ctx.fillRect(rect.x, rect.y + offset, rect.width, rect.height);
         ctx.strokeStyle = '#e65100';
@@ -477,21 +496,19 @@ export default function GameCanvas({
         ctx.beginPath();
         ctx.arc(circle.x, circle.y, circle.radius, 0, Math.PI * 2);
         ctx.fill();
-        
         ctx.strokeStyle = '#6a1b9a';
         ctx.lineWidth = 2;
         ctx.stroke();
       }
     });
 
-    // Draw walls
+    // Walls
     level.walls.forEach(wall => {
       const angle = Math.atan2(wall.end.y - wall.start.y, wall.end.x - wall.start.x);
       const perpX = Math.cos(angle + Math.PI / 2);
       const perpY = Math.sin(angle + Math.PI / 2);
       const halfThick = wall.thickness / 2;
 
-      // Shadow
       ctx.fillStyle = COLORS.shadow;
       ctx.beginPath();
       ctx.moveTo(wall.start.x - perpX * halfThick + 2, wall.start.y - perpY * halfThick + 2);
@@ -501,7 +518,6 @@ export default function GameCanvas({
       ctx.closePath();
       ctx.fill();
 
-      // Main wall
       ctx.fillStyle = COLORS.wallMain;
       ctx.beginPath();
       ctx.moveTo(wall.start.x - perpX * halfThick, wall.start.y - perpY * halfThick);
@@ -516,7 +532,7 @@ export default function GameCanvas({
       ctx.stroke();
     });
 
-    // Draw hole
+    // Hole
     ctx.fillStyle = COLORS.shadow;
     ctx.beginPath();
     ctx.arc(level.hole.position.x + 1, level.hole.position.y + 1, HOLE_RADIUS, 0, Math.PI * 2);
@@ -526,7 +542,6 @@ export default function GameCanvas({
     ctx.beginPath();
     ctx.arc(level.hole.position.x, level.hole.position.y, HOLE_RADIUS, 0, Math.PI * 2);
     ctx.fill();
-    
     ctx.strokeStyle = '#ffffff';
     ctx.lineWidth = 2;
     ctx.stroke();
@@ -535,7 +550,6 @@ export default function GameCanvas({
     if (!scored) {
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(level.hole.position.x + 1, level.hole.position.y - 28, 2, 30);
-      
       ctx.fillStyle = '#e53935';
       ctx.beginPath();
       ctx.moveTo(level.hole.position.x + 3, level.hole.position.y - 28);
@@ -545,7 +559,7 @@ export default function GameCanvas({
       ctx.fill();
     }
 
-    // Draw tee
+    // Tee
     ctx.fillStyle = '#ffffff';
     ctx.beginPath();
     ctx.arc(level.tee.x, level.tee.y, 4, 0, Math.PI * 2);
@@ -554,13 +568,11 @@ export default function GameCanvas({
     ctx.lineWidth = 1;
     ctx.stroke();
 
-    // Draw other players' balls
+    // Other players' balls
     otherPlayers.forEach(player => {
       if (player.hasFinished) return;
-      
       drawBall(ctx, player.odosition.x, player.odosition.y, BALL_RADIUS, player.color, 0);
       
-      // Name tag
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
@@ -570,13 +582,13 @@ export default function GameCanvas({
       ctx.fillText(player.name, player.odosition.x, player.odosition.y - 9);
     });
 
-    // Draw my ball
+    // My ball
     if (!scored) {
       drawBall(ctx, ball.position.x, ball.position.y, ball.radius, playerColor, ballRotation);
     }
 
-    // Aim line
-    if (isAiming && aimStart && aimEnd && !isRolling && !scored) {
+    // Shot indicator (white tapered line)
+    if (isAiming && aimStart && aimEnd && !isRolling && !scored && isMyTurn) {
       const dx = aimStart.x - aimEnd.x;
       const dy = aimStart.y - aimEnd.y;
       const distance = Math.sqrt(dx * dx + dy * dy);
@@ -584,32 +596,12 @@ export default function GameCanvas({
       const angle = Math.atan2(dy, dx);
       const displayDist = Math.min(distance, 150);
       
-      // Dotted line
-      ctx.setLineDash([6, 4]);
-      ctx.strokeStyle = playerColor;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(ball.position.x, ball.position.y);
-      ctx.lineTo(
-        ball.position.x + Math.cos(angle) * displayDist,
-        ball.position.y + Math.sin(angle) * displayDist
-      );
-      ctx.stroke();
-      ctx.setLineDash([]);
+      // Calculate end point of indicator
+      const endX = ball.position.x + Math.cos(angle) * displayDist;
+      const endY = ball.position.y + Math.sin(angle) * displayDist;
       
-      // Arrow
-      if (displayDist > 20) {
-        const arrowX = ball.position.x + Math.cos(angle) * displayDist;
-        const arrowY = ball.position.y + Math.sin(angle) * displayDist;
-        
-        ctx.fillStyle = playerColor;
-        ctx.beginPath();
-        ctx.moveTo(arrowX, arrowY);
-        ctx.lineTo(arrowX - Math.cos(angle - 0.4) * 10, arrowY - Math.sin(angle - 0.4) * 10);
-        ctx.lineTo(arrowX - Math.cos(angle + 0.4) * 10, arrowY - Math.sin(angle + 0.4) * 10);
-        ctx.closePath();
-        ctx.fill();
-      }
+      // Draw tapered indicator (thick at ball, thin at end)
+      drawShotIndicator(ctx, ball.position.x, ball.position.y, endX, endY, BALL_RADIUS * 2);
       
       // Power bar
       const barX = 20;
@@ -632,6 +624,16 @@ export default function GameCanvas({
       ctx.font = '10px sans-serif';
       ctx.textAlign = 'left';
       ctx.fillText(`${Math.round(power * 100)}%`, barX + barW + 6, barY + 9);
+    }
+
+    // Not your turn indicator
+    if (!isMyTurn && !scored && !isRolling) {
+      ctx.fillStyle = 'rgba(0,0,0,0.5)';
+      ctx.fillRect(0, canvas.height - 40, canvas.width, 40);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = '14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Waiting for ${currentTurnPlayerName}...`, canvas.width / 2, canvas.height - 18);
     }
 
     // Splash
@@ -662,7 +664,7 @@ export default function GameCanvas({
       ctx.fillText('HOLE!', level.hole.position.x, level.hole.position.y - 35);
     }
 
-  }, [ball, level, isAiming, aimStart, aimEnd, playerColor, isRolling, scored, windmillAngles, movingWallOffsets, showSplash, ballRotation, otherPlayers]);
+  }, [ball, level, isAiming, aimStart, aimEnd, playerColor, isRolling, scored, isMyTurn, windmillAngles, movingWallOffsets, showSplash, ballRotation, otherPlayers, currentTurnPlayerName]);
 
   const getCanvasCoords = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
@@ -687,11 +689,12 @@ export default function GameCanvas({
   }, []);
 
   const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
-    if (isRolling || scored) return;
+    // Only allow aiming if it's my turn and ball is not moving
+    if (!isMyTurn || isRolling || scored) return;
     setIsAiming(true);
     setAimStart(getCanvasCoords(e));
     setAimEnd(getCanvasCoords(e));
-  }, [isRolling, scored, getCanvasCoords]);
+  }, [isMyTurn, isRolling, scored, getCanvasCoords]);
 
   const handlePointerMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isAiming) return;
@@ -699,7 +702,7 @@ export default function GameCanvas({
   }, [isAiming, getCanvasCoords]);
 
   const handlePointerUp = useCallback(() => {
-    if (!isAiming || !aimStart || !aimEnd) {
+    if (!isAiming || !aimStart || !aimEnd || !isMyTurn) {
       setIsAiming(false);
       return;
     }
@@ -720,7 +723,7 @@ export default function GameCanvas({
     setIsAiming(false);
     setAimStart(null);
     setAimEnd(null);
-  }, [isAiming, aimStart, aimEnd, ball, strokes, onShot]);
+  }, [isAiming, aimStart, aimEnd, isMyTurn, ball, strokes, onShot]);
 
   return (
     <div className={styles.container}>
@@ -739,7 +742,7 @@ export default function GameCanvas({
         ref={canvasRef}
         width={600}
         height={600}
-        className={styles.canvas}
+        className={`${styles.canvas} ${!isMyTurn && !scored ? styles.waiting : ''}`}
         onMouseDown={handlePointerDown}
         onMouseMove={handlePointerMove}
         onMouseUp={handlePointerUp}
@@ -750,9 +753,9 @@ export default function GameCanvas({
       />
       
       <div className={styles.footer}>
-        {!isRolling && !scored && (
+        {isMyTurn && !isRolling && !scored && (
           <div className={styles.instruction}>
-            Drag to aim • Release to shoot
+            Your turn! Drag to aim
           </div>
         )}
         {isRolling && (
