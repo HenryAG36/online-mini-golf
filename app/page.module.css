@@ -1,0 +1,319 @@
+.main {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  position: relative;
+  overflow: hidden;
+}
+
+.container {
+  max-width: 900px;
+  width: 100%;
+  z-index: 1;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 3rem;
+}
+
+.logoContainer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.golfBall {
+  width: 50px;
+  height: 50px;
+  background: radial-gradient(circle at 30% 30%, #fff, #ccc);
+  border-radius: 50%;
+  box-shadow: 
+    0 0 20px rgba(255, 255, 255, 0.5),
+    0 0 40px rgba(0, 255, 255, 0.3),
+    inset -5px -5px 15px rgba(0, 0, 0, 0.2);
+  animation: float 3s ease-in-out infinite;
+}
+
+.subtitle {
+  font-size: 1.3rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.courseSelection {
+  background: rgba(18, 18, 26, 0.8);
+  border: 1px solid var(--dark-border);
+  border-radius: 20px;
+  padding: 2rem;
+  margin-bottom: 2rem;
+  backdrop-filter: blur(10px);
+}
+
+.sectionTitle {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: var(--neon-cyan);
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+
+.courseGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.courseCard {
+  background: linear-gradient(145deg, rgba(30, 30, 46, 0.9), rgba(18, 18, 26, 0.9));
+  border: 2px solid var(--dark-border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+  font-family: inherit;
+  color: white;
+}
+
+.courseCard:hover {
+  transform: translateY(-5px);
+  border-color: var(--neon-pink);
+  box-shadow: 0 10px 30px rgba(255, 0, 255, 0.2);
+}
+
+.courseCard.selected {
+  border-color: var(--neon-cyan);
+  box-shadow: 
+    0 0 20px rgba(0, 255, 255, 0.3),
+    inset 0 0 30px rgba(0, 255, 255, 0.1);
+}
+
+.courseIcon {
+  width: 60px;
+  height: 60px;
+  background: linear-gradient(135deg, var(--neon-pink), var(--neon-cyan));
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 1rem;
+}
+
+.holeNumber {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--dark-bg);
+}
+
+.courseName {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.1rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.courseInfo {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  font-size: 0.85rem;
+}
+
+.difficulty {
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.difficulty.easy {
+  background: rgba(57, 255, 20, 0.2);
+  color: var(--neon-green);
+}
+
+.difficulty.medium {
+  background: rgba(255, 255, 0, 0.2);
+  color: var(--neon-yellow);
+}
+
+.difficulty.hard {
+  background: rgba(255, 102, 0, 0.2);
+  color: var(--neon-orange);
+}
+
+.holes {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.playButton {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto 2rem;
+  padding: 1.25rem 3rem;
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: white;
+  background: linear-gradient(135deg, var(--neon-pink), #ff0080);
+  border: none;
+  border-radius: 50px;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.playButton:hover {
+  transform: scale(1.05);
+  box-shadow: 
+    0 0 30px rgba(255, 0, 255, 0.5),
+    0 0 60px rgba(255, 0, 255, 0.3);
+}
+
+.playButton:active {
+  transform: scale(0.98);
+}
+
+.playText {
+  position: relative;
+  z-index: 1;
+}
+
+.playGlow {
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: shine 3s infinite;
+}
+
+@keyframes shine {
+  0% { left: -100%; }
+  50%, 100% { left: 100%; }
+}
+
+.instructions {
+  background: rgba(18, 18, 26, 0.6);
+  border: 1px solid var(--dark-border);
+  border-radius: 16px;
+  padding: 1.5rem 2rem;
+  text-align: center;
+}
+
+.instructions h3 {
+  font-family: 'Orbitron', sans-serif;
+  font-size: 1rem;
+  color: var(--neon-green);
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.instructions ul {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1.5rem;
+}
+
+.instructions li {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.95rem;
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.instructions li::before {
+  content: '▸';
+  position: absolute;
+  left: 0;
+  color: var(--neon-cyan);
+}
+
+.decorations {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.orb1, .orb2, .orb3 {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+}
+
+.orb1 {
+  width: 400px;
+  height: 400px;
+  background: var(--neon-pink);
+  top: -100px;
+  right: -100px;
+  animation: float 8s ease-in-out infinite;
+}
+
+.orb2 {
+  width: 300px;
+  height: 300px;
+  background: var(--neon-cyan);
+  bottom: -50px;
+  left: -50px;
+  animation: float 10s ease-in-out infinite reverse;
+}
+
+.orb3 {
+  width: 200px;
+  height: 200px;
+  background: var(--neon-green);
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation: pulse 5s ease-in-out infinite;
+}
+
+@media (max-width: 768px) {
+  .main {
+    padding: 1rem;
+  }
+  
+  .game-title {
+    font-size: 2rem;
+  }
+  
+  .subtitle {
+    font-size: 1rem;
+  }
+  
+  .courseGrid {
+    grid-template-columns: 1fr;
+  }
+  
+  .instructions ul {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+}
