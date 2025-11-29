@@ -1,5 +1,17 @@
 import { NextResponse } from 'next/server';
+import Pusher from 'pusher';
 import { getRoom, addPlayerToRoom } from '@/app/lib/rooms';
+
+// Initialize Pusher for server-side events
+const pusher = process.env.PUSHER_APP_ID && process.env.PUSHER_KEY && process.env.PUSHER_SECRET && process.env.PUSHER_CLUSTER
+  ? new Pusher({
+      appId: process.env.PUSHER_APP_ID,
+      key: process.env.PUSHER_KEY,
+      secret: process.env.PUSHER_SECRET,
+      cluster: process.env.PUSHER_CLUSTER,
+      useTLS: true,
+    })
+  : null;
 
 export async function POST(
   request: Request,
@@ -32,6 +44,14 @@ export async function POST(
         { error: 'Failed to join room' },
         { status: 500 }
       );
+    }
+
+    // Notify all players in the room about the new player
+    if (pusher) {
+      await pusher.trigger(`game-${code}`, 'player-joined', {
+        player,
+        players: updatedRoom.players,
+      });
     }
 
     return NextResponse.json({ players: updatedRoom.players });

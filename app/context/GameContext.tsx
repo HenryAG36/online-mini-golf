@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import Pusher from 'pusher-js';
-import { Player, GameState } from '../types';
+import { Player } from '../types';
 import { levels, PLAYER_COLORS } from '../levels';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -55,8 +55,27 @@ function generateRoomCode(): string {
   return code;
 }
 
+// Assign consistent colors based on player index
+function assignPlayerColors(players: Player[]): Player[] {
+  return players.map((p, i) => ({
+    ...p,
+    color: PLAYER_COLORS[i % PLAYER_COLORS.length],
+  }));
+}
+
 export function GameProvider({ children }: GameProviderProps) {
-  const [playerId] = useState(() => uuidv4());
+  const [playerId] = useState(() => {
+    // Try to get existing ID from sessionStorage for page refreshes
+    if (typeof window !== 'undefined') {
+      const existing = sessionStorage.getItem('minigolf-player-id');
+      if (existing) return existing;
+      const newId = uuidv4();
+      sessionStorage.setItem('minigolf-player-id', newId);
+      return newId;
+    }
+    return uuidv4();
+  });
+  
   const [roomCode, setRoomCode] = useState<string | null>(null);
   const [isHost, setIsHost] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
@@ -75,17 +94,20 @@ export function GameProvider({ children }: GameProviderProps) {
     process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
   // Initialize Pusher connection
-  const initPusher = useCallback((code: string) => {
+  const initPusher = useCallback((code: string, currentPlayerId: string) => {
     if (!isPusherConfigured) {
       // Use local-only mode
       setIsConnected(true);
       return;
     }
 
+    // Disconnect existing connection
     if (pusherRef.current) {
       pusherRef.current.disconnect();
     }
 
+    console.log('Initializing Pusher for room:', code);
+    
     const pusher = new Pusher(process.env.NEXT_PUBLIC_PUSHER_KEY!, {
       cluster: process.env.NEXT_PUBLIC_PUSHER_CLUSTER!,
     });
@@ -96,46 +118,61 @@ export function GameProvider({ children }: GameProviderProps) {
     channelRef.current = channel;
 
     channel.bind('pusher:subscription_succeeded', () => {
+      console.log('Pusher subscription succeeded');
       setIsConnected(true);
     });
 
     channel.bind('player-joined', (data: { player: Player; players: Player[] }) => {
-      setPlayers(data.players);
+      console.log('Player joined event received:', data);
+      // Update players list with consistent colors
+      setPlayers(assignPlayerColors(data.players));
     });
 
     channel.bind('player-left', (data: { playerId: string; players: Player[] }) => {
-      setPlayers(data.players);
+      console.log('Player left event received:', data);
+      setPlayers(assignPlayerColors(data.players));
     });
 
     channel.bind('player-ready', (data: { playerId: string; isReady: boolean }) => {
+      console.log('Player ready event received:', data);
       setPlayers(prev => prev.map(p => 
         p.id === data.playerId ? { ...p, isReady: data.isReady } : p
       ));
     });
 
-    channel.bind('game-started', () => {
+    channel.bind('game-started', (data: { players: Player[] }) => {
+      console.log('Game started event received:', data);
       setGamePhase('playing');
       setCurrentLevel(0);
       setCurrentPlayerIndex(0);
+      if (data.players) {
+        setPlayers(assignPlayerColors(data.players.map(p => ({ ...p, scores: [] }))));
+      }
     });
 
     channel.bind('shot-recorded', (data: { playerId: string; strokes: number }) => {
-      // Update strokes display
+      console.log('Shot recorded:', data);
     });
 
-    channel.bind('hole-completed', (data: { playerId: string; strokes: number; nextPlayerIndex: number }) => {
+    channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number; nextPlayerIndex: number; allComplete: boolean }) => {
+      console.log('Hole completed event received:', data);
+      
       setPlayers(prev => prev.map(p => {
         if (p.id === data.playerId) {
           const newScores = [...p.scores];
-          newScores[currentLevel] = data.strokes;
+          newScores[data.currentLevel] = data.strokes;
           return { ...p, scores: newScores };
         }
         return p;
       }));
-      setCurrentPlayerIndex(data.nextPlayerIndex);
+      
+      if (!data.allComplete) {
+        setCurrentPlayerIndex(data.nextPlayerIndex);
+      }
     });
 
     channel.bind('next-level', (data: { level: number }) => {
+      console.log('Next level event received:', data);
       if (data.level >= levels.length) {
         setGamePhase('results');
       } else {
@@ -148,11 +185,22 @@ export function GameProvider({ children }: GameProviderProps) {
       console.error('Pusher error:', err);
       setError('Connection error. Please try again.');
     });
-  }, [isPusherConfigured, currentLevel]);
+
+    pusher.connection.bind('connected', () => {
+      console.log('Pusher connected');
+    });
+
+    pusher.connection.bind('disconnected', () => {
+      console.log('Pusher disconnected');
+    });
+  }, [isPusherConfigured]);
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (channelRef.current) {
+        channelRef.current.unbind_all();
+      }
       if (pusherRef.current) {
         pusherRef.current.disconnect();
       }
@@ -168,7 +216,7 @@ export function GameProvider({ children }: GameProviderProps) {
     }
 
     try {
-      await fetch('/api/pusher/trigger', {
+      const response = await fetch('/api/pusher/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -177,6 +225,10 @@ export function GameProvider({ children }: GameProviderProps) {
           data,
         }),
       });
+      
+      if (!response.ok) {
+        console.error('Failed to send event:', await response.text());
+      }
     } catch (err) {
       console.error('Failed to send event:', err);
     }
@@ -184,27 +236,33 @@ export function GameProvider({ children }: GameProviderProps) {
 
   const createRoom = useCallback(async (playerName: string): Promise<string> => {
     const code = generateRoomCode();
-    setRoomCode(code);
-    setIsHost(true);
     
     const newPlayer: Player = {
       id: playerId,
       name: playerName,
       color: PLAYER_COLORS[0],
       scores: [],
-      isReady: false,
+      isReady: true, // Host is always ready
     };
     
-    setPlayers([newPlayer]);
-    initPusher(code);
+    // Initialize Pusher first so we receive events
+    initPusher(code, playerId);
     
-    // Register room and player
+    setRoomCode(code);
+    setIsHost(true);
+    setPlayers([newPlayer]);
+    
+    // Register room and player on server
     if (isPusherConfigured) {
-      await fetch('/api/rooms', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, player: newPlayer }),
-      });
+      try {
+        await fetch('/api/rooms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code, player: newPlayer }),
+        });
+      } catch (err) {
+        console.error('Failed to create room on server:', err);
+      }
     }
     
     return code;
@@ -213,14 +271,16 @@ export function GameProvider({ children }: GameProviderProps) {
   const joinRoom = useCallback(async (code: string, playerName: string): Promise<void> => {
     setError(null);
     
-    const colorIndex = Math.floor(Math.random() * PLAYER_COLORS.length);
     const newPlayer: Player = {
       id: playerId,
       name: playerName,
-      color: PLAYER_COLORS[colorIndex],
+      color: PLAYER_COLORS[0], // Will be reassigned
       scores: [],
       isReady: false,
     };
+
+    // Initialize Pusher first so we receive the join confirmation
+    initPusher(code, playerId);
 
     if (isPusherConfigured) {
       // Verify room exists and join
@@ -231,26 +291,20 @@ export function GameProvider({ children }: GameProviderProps) {
       });
 
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to join room');
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to join room');
       }
 
       const data = await response.json();
-      setPlayers(data.players.map((p: Player, i: number) => ({
-        ...p,
-        color: PLAYER_COLORS[i % PLAYER_COLORS.length],
-      })));
+      // Set players with consistent colors
+      setPlayers(assignPlayerColors(data.players));
     } else {
       // Local mode - just add player
-      setPlayers(prev => {
-        const newPlayers = [...prev, { ...newPlayer, color: PLAYER_COLORS[prev.length % PLAYER_COLORS.length] }];
-        return newPlayers;
-      });
+      setPlayers(prev => assignPlayerColors([...prev, newPlayer]));
     }
 
     setRoomCode(code);
     setIsHost(false);
-    initPusher(code);
   }, [playerId, initPusher, isPusherConfigured]);
 
   const leaveRoom = useCallback(() => {
@@ -259,7 +313,7 @@ export function GameProvider({ children }: GameProviderProps) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ playerId }),
-      });
+      }).catch(err => console.error('Failed to leave room:', err));
     }
 
     if (channelRef.current) {
@@ -276,35 +330,43 @@ export function GameProvider({ children }: GameProviderProps) {
     setCurrentPlayerIndex(0);
     setCurrentLevel(0);
     setGamePhase('lobby');
+    setError(null);
   }, [roomCode, playerId, isPusherConfigured]);
 
   const toggleReady = useCallback(() => {
-    setPlayers(prev => prev.map(p => {
-      if (p.id === playerId) {
-        const newReady = !p.isReady;
-        sendEvent('player-ready', { playerId, isReady: newReady });
-        return { ...p, isReady: newReady };
-      }
-      return p;
-    }));
+    setPlayers(prev => {
+      const updated = prev.map(p => {
+        if (p.id === playerId) {
+          const newReady = !p.isReady;
+          // Send event after state update
+          sendEvent('player-ready', { playerId, isReady: newReady });
+          return { ...p, isReady: newReady };
+        }
+        return p;
+      });
+      return updated;
+    });
   }, [playerId, sendEvent]);
 
   const startGame = useCallback(() => {
     if (!isHost) return;
     
+    const resetPlayers = players.map(p => ({ ...p, scores: [] }));
+    
     setGamePhase('playing');
     setCurrentLevel(0);
     setCurrentPlayerIndex(0);
-    setPlayers(prev => prev.map(p => ({ ...p, scores: [] })));
+    setPlayers(resetPlayers);
     
-    sendEvent('game-started', {});
-  }, [isHost, sendEvent]);
+    sendEvent('game-started', { players: resetPlayers });
+  }, [isHost, players, sendEvent]);
 
   const recordShot = useCallback((strokes: number) => {
     sendEvent('shot-recorded', { playerId, strokes });
   }, [playerId, sendEvent]);
 
   const completeHole = useCallback((strokes: number) => {
+    // Update local state
     setPlayers(prev => {
       const updated = prev.map(p => {
         if (p.id === playerId) {
@@ -314,32 +376,42 @@ export function GameProvider({ children }: GameProviderProps) {
         }
         return p;
       });
+      
+      // Calculate next player
+      const currentPlayerPos = updated.findIndex(p => p.id === playerId);
+      const nextIndex = (currentPlayerPos + 1) % updated.length;
+      
+      // Check if all players have completed this hole
+      const allComplete = updated.every(p => p.scores[currentLevel] !== undefined);
+      
+      // Send event with all info
+      sendEvent('hole-completed', { 
+        playerId, 
+        strokes, 
+        currentLevel,
+        nextPlayerIndex: nextIndex,
+        allComplete
+      });
+      
+      // Update turn locally if not all complete
+      if (!allComplete) {
+        setCurrentPlayerIndex(nextIndex);
+      }
+      
       return updated;
     });
-
-    // Check if all players have completed this hole
-    const allComplete = players.every(p => {
-      if (p.id === playerId) return true;
-      return p.scores[currentLevel] !== undefined;
-    });
-
-    let nextIndex = currentPlayerIndex;
-    if (!allComplete) {
-      nextIndex = (currentPlayerIndex + 1) % players.length;
-      setCurrentPlayerIndex(nextIndex);
-    }
-
-    sendEvent('hole-completed', { playerId, strokes, nextPlayerIndex: nextIndex });
-  }, [playerId, currentLevel, currentPlayerIndex, players, sendEvent]);
+  }, [playerId, currentLevel, sendEvent]);
 
   const nextLevel = useCallback(() => {
     const next = currentLevel + 1;
+    
     if (next >= levels.length) {
       setGamePhase('results');
     } else {
       setCurrentLevel(next);
       setCurrentPlayerIndex(0);
     }
+    
     sendEvent('next-level', { level: next });
   }, [currentLevel, sendEvent]);
 
