@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { GameProvider, useGame } from './context/GameContext';
 import GameCanvas from './components/GameCanvas';
 import { levels, PLAYER_COLORS } from './levels';
+import { Vector2 } from './types';
 import styles from './page.module.css';
 
 function GameContent() {
@@ -19,6 +20,7 @@ function GameContent() {
     leaveRoom,
     startGame,
     updateBallPosition,
+    broadcastCollision,
     completeHole,
     nextLevel,
     toggleReady,
@@ -29,10 +31,22 @@ function GameContent() {
   const [joinCode, setJoinCode] = useState('');
   const [isJoining, setIsJoining] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
+  const [externalVelocity, setExternalVelocity] = useState<Vector2 | null>(null);
 
   const myPlayer = players.find(p => p.id === playerId);
   const allPlayersFinished = players.length > 0 && players.every(p => p.hasFinishedHole);
   const myHasFinished = myPlayer?.hasFinishedHole || false;
+
+  // Listen for collision events from context (when someone hits my ball)
+  useEffect(() => {
+    // Check if my ball state velocity changed from external source
+    if (myPlayer?.ballState.velocity) {
+      const vel = myPlayer.ballState.velocity;
+      if (Math.abs(vel.x) > 0.1 || Math.abs(vel.y) > 0.1) {
+        // There's velocity - could be from a collision
+      }
+    }
+  }, [myPlayer?.ballState.velocity]);
 
   // Get other players' ball states for rendering
   const otherPlayerBalls = useMemo(() => {
@@ -89,6 +103,14 @@ function GameContent() {
   const handleNextHole = () => {
     nextLevel();
   };
+
+  const handleBallCollision = useCallback((targetPlayerId: string, newVelocity: Vector2) => {
+    broadcastCollision(targetPlayerId, newVelocity);
+  }, [broadcastCollision]);
+
+  const handleExternalVelocityApplied = useCallback(() => {
+    setExternalVelocity(null);
+  }, []);
 
   const getTotalScore = (player: typeof players[0]) => {
     return player.scores.reduce((sum, s) => sum + (s || 0), 0);
@@ -378,9 +400,12 @@ function GameContent() {
           onShot={() => {}}
           onHoleComplete={handleHoleComplete}
           onBallUpdate={updateBallPosition}
+          onBallCollision={handleBallCollision}
           otherPlayers={otherPlayerBalls}
           currentStrokes={0}
           hasFinishedHole={myHasFinished}
+          externalVelocity={externalVelocity}
+          onExternalVelocityApplied={handleExternalVelocityApplied}
         />
 
         {/* Live scoreboard */}

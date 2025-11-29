@@ -17,25 +17,22 @@ interface PlayerWithBall extends Player {
 }
 
 interface GameContextType {
-  // Connection state
   playerId: string;
   roomCode: string | null;
   isHost: boolean;
   isConnected: boolean;
   error: string | null;
-  
-  // Game state
   players: PlayerWithBall[];
   currentPlayerIndex: number;
   currentLevel: number;
   gamePhase: 'lobby' | 'playing' | 'results';
-  
-  // Actions
   createRoom: (playerName: string) => Promise<string>;
   joinRoom: (code: string, playerName: string) => Promise<void>;
   leaveRoom: () => void;
   startGame: () => void;
   updateBallPosition: (position: Vector2, velocity: Vector2) => void;
+  applyCollisionToMyBall: (velocity: Vector2) => void;
+  broadcastCollision: (targetPlayerId: string, newVelocity: Vector2) => void;
   completeHole: (strokes: number) => void;
   nextLevel: () => void;
   toggleReady: () => void;
@@ -95,12 +92,13 @@ export function GameProvider({ children }: GameProviderProps) {
   const pusherRef = useRef<Pusher | null>(null);
   const channelRef = useRef<ReturnType<Pusher['subscribe']> | null>(null);
   const lastBallUpdateRef = useRef<number>(0);
+  const collisionCallbackRef = useRef<((velocity: Vector2) => void) | null>(null);
 
   const isPusherConfigured = typeof window !== 'undefined' && 
     process.env.NEXT_PUBLIC_PUSHER_KEY && 
     process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
-  const initPusher = useCallback((code: string) => {
+  const initPusher = useCallback((code: string, myPlayerId: string) => {
     if (!isPusherConfigured) {
       setIsConnected(true);
       return;
@@ -171,11 +169,22 @@ export function GameProvider({ children }: GameProviderProps) {
 
     // Real-time ball position updates
     channel.bind('ball-update', (data: { playerId: string; position: Vector2; velocity: Vector2 }) => {
+      if (data.playerId === myPlayerId) return; // Ignore own updates
       setPlayers(prev => prev.map(p => 
         p.id === data.playerId 
           ? { ...p, ballState: { position: data.position, velocity: data.velocity } }
           : p
       ));
+    });
+
+    // Ball collision - when another player hits my ball
+    channel.bind('ball-collision', (data: { targetPlayerId: string; newVelocity: Vector2 }) => {
+      if (data.targetPlayerId === myPlayerId) {
+        // Someone hit my ball! Apply the velocity
+        if (collisionCallbackRef.current) {
+          collisionCallbackRef.current(data.newVelocity);
+        }
+      }
     });
 
     channel.bind('hole-completed', (data: { playerId: string; strokes: number; currentLevel: number }) => {
@@ -187,10 +196,6 @@ export function GameProvider({ children }: GameProviderProps) {
         }
         return p;
       }));
-    });
-
-    channel.bind('all-finished', (data: { level: number }) => {
-      // All players finished, ready for next level
     });
 
     channel.bind('next-level', (data: { level: number }) => {
@@ -216,12 +221,8 @@ export function GameProvider({ children }: GameProviderProps) {
 
   useEffect(() => {
     return () => {
-      if (channelRef.current) {
-        channelRef.current.unbind_all();
-      }
-      if (pusherRef.current) {
-        pusherRef.current.disconnect();
-      }
+      if (channelRef.current) channelRef.current.unbind_all();
+      if (pusherRef.current) pusherRef.current.disconnect();
     };
   }, []);
 
@@ -256,7 +257,7 @@ export function GameProvider({ children }: GameProviderProps) {
       hasFinishedHole: false,
     };
     
-    initPusher(code);
+    initPusher(code, playerId);
     setRoomCode(code);
     setIsHost(true);
     setPlayers([newPlayer]);
@@ -266,10 +267,10 @@ export function GameProvider({ children }: GameProviderProps) {
         await fetch('/api/rooms', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ code, player: { ...newPlayer, ballState: undefined, hasFinishedHole: undefined } }),
+          body: JSON.stringify({ code, player: { id: newPlayer.id, name: newPlayer.name, color: newPlayer.color, scores: [], isReady: true } }),
         });
       } catch (err) {
-        console.error('Failed to create room on server:', err);
+        console.error('Failed to create room:', err);
       }
     }
     
@@ -289,13 +290,13 @@ export function GameProvider({ children }: GameProviderProps) {
       hasFinishedHole: false,
     };
 
-    initPusher(code);
+    initPusher(code, playerId);
 
     if (isPusherConfigured) {
       const response = await fetch(`/api/rooms/${code}/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ player: { ...newPlayer, ballState: undefined, hasFinishedHole: undefined } }),
+        body: JSON.stringify({ player: { id: newPlayer.id, name: newPlayer.name, color: newPlayer.color, scores: [], isReady: false } }),
       });
 
       if (!response.ok) {
@@ -370,25 +371,46 @@ export function GameProvider({ children }: GameProviderProps) {
     setCurrentPlayerIndex(0);
     setPlayers(resetPlayers);
     
-    sendEvent('game-started', { players: resetPlayers.map(p => ({ ...p, ballState: undefined, hasFinishedHole: undefined })), level: 0 });
+    sendEvent('game-started', { players: resetPlayers.map(p => ({ id: p.id, name: p.name, color: p.color, scores: [], isReady: p.isReady })), level: 0 });
   }, [isHost, players, sendEvent]);
 
   const updateBallPosition = useCallback((position: Vector2, velocity: Vector2) => {
-    // Throttle updates to ~20fps for network efficiency
     const now = performance.now();
     if (now - lastBallUpdateRef.current < 50) return;
     lastBallUpdateRef.current = now;
 
-    // Update local state
     setPlayers(prev => prev.map(p => 
       p.id === playerId 
         ? { ...p, ballState: { position, velocity } }
         : p
     ));
 
-    // Broadcast to other players
     sendEvent('ball-update', { playerId, position, velocity });
   }, [playerId, sendEvent]);
+
+  // Function to apply collision to my own ball (called via callback)
+  const applyCollisionToMyBall = useCallback((velocity: Vector2) => {
+    setPlayers(prev => prev.map(p => {
+      if (p.id === playerId) {
+        return {
+          ...p,
+          ballState: {
+            ...p.ballState,
+            velocity: {
+              x: p.ballState.velocity.x + velocity.x,
+              y: p.ballState.velocity.y + velocity.y,
+            },
+          },
+        };
+      }
+      return p;
+    }));
+  }, [playerId]);
+
+  // Broadcast collision to another player
+  const broadcastCollision = useCallback((targetPlayerId: string, newVelocity: Vector2) => {
+    sendEvent('ball-collision', { targetPlayerId, newVelocity });
+  }, [sendEvent]);
 
   const completeHole = useCallback((strokes: number) => {
     setPlayers(prev => {
@@ -401,9 +423,7 @@ export function GameProvider({ children }: GameProviderProps) {
         return p;
       });
       
-      // Check if all players have finished
       const allFinished = updated.every(p => p.hasFinishedHole);
-      
       if (allFinished) {
         sendEvent('all-finished', { level: currentLevel });
       }
@@ -433,6 +453,11 @@ export function GameProvider({ children }: GameProviderProps) {
     sendEvent('next-level', { level: next });
   }, [currentLevel, sendEvent]);
 
+  // Set the collision callback ref so GameCanvas can register its handler
+  const setCollisionCallback = useCallback((callback: (velocity: Vector2) => void) => {
+    collisionCallbackRef.current = callback;
+  }, []);
+
   return (
     <GameContext.Provider value={{
       playerId,
@@ -449,6 +474,8 @@ export function GameProvider({ children }: GameProviderProps) {
       leaveRoom,
       startGame,
       updateBallPosition,
+      applyCollisionToMyBall,
+      broadcastCollision,
       completeHole,
       nextLevel,
       toggleReady,

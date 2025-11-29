@@ -7,7 +7,7 @@ export const levels: Level[] = [
     name: "First Swing",
     par: 2,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -25,7 +25,7 @@ export const levels: Level[] = [
     name: "The Corner",
     par: 3,
     tee: { x: 100, y: 150 },
-    hole: { position: { x: 500, y: 450 }, radius: 18 },
+    hole: { position: { x: 500, y: 450 }, radius: 10 },
     bounds: { x: 40, y: 80, width: 520, height: 440 },
     walls: [
       { start: { x: 40, y: 80 }, end: { x: 300, y: 80 }, thickness: 8 },
@@ -47,7 +47,7 @@ export const levels: Level[] = [
     name: "Bumper Zone",
     par: 3,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -70,7 +70,7 @@ export const levels: Level[] = [
     name: "Beach Day",
     par: 3,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -91,7 +91,7 @@ export const levels: Level[] = [
     name: "Water World",
     par: 3,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -111,7 +111,7 @@ export const levels: Level[] = [
     name: "Windmill Classic",
     par: 4,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -131,7 +131,7 @@ export const levels: Level[] = [
     name: "The Maze",
     par: 5,
     tee: { x: 80, y: 150 },
-    hole: { position: { x: 520, y: 450 }, radius: 18 },
+    hole: { position: { x: 520, y: 450 }, radius: 10 },
     bounds: { x: 40, y: 80, width: 520, height: 440 },
     walls: [
       { start: { x: 40, y: 80 }, end: { x: 560, y: 80 }, thickness: 8 },
@@ -154,7 +154,7 @@ export const levels: Level[] = [
     name: "Portal Jump",
     par: 3,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -177,7 +177,7 @@ export const levels: Level[] = [
     name: "Keep Moving",
     par: 4,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -198,7 +198,7 @@ export const levels: Level[] = [
     name: "Pinball Zone",
     par: 4,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -212,8 +212,8 @@ export const levels: Level[] = [
       { type: 'bumper', shape: { x: 300, y: 300, radius: 28 }, properties: { bounceFactor: 1.6 } },
       { type: 'bumper', shape: { x: 400, y: 200, radius: 22 }, properties: { bounceFactor: 1.6 } },
       { type: 'bumper', shape: { x: 400, y: 400, radius: 22 }, properties: { bounceFactor: 1.6 } },
-      { type: 'bumper', shape: { x: 300, y: 180, radius: 18 }, properties: { bounceFactor: 1.6 } },
-      { type: 'bumper', shape: { x: 300, y: 420, radius: 18 }, properties: { bounceFactor: 1.6 } },
+      { type: 'bumper', shape: { x: 300, y: 180, radius: 10 }, properties: { bounceFactor: 1.6 } },
+      { type: 'bumper', shape: { x: 300, y: 420, radius: 10 }, properties: { bounceFactor: 1.6 } },
     ],
     theme: { primary: '#4a3d42', secondary: '#312529', accent: '#f472b6' }
   },
@@ -224,7 +224,7 @@ export const levels: Level[] = [
     name: "Snake Path",
     par: 4,
     tee: { x: 80, y: 130 },
-    hole: { position: { x: 520, y: 470 }, radius: 18 },
+    hole: { position: { x: 520, y: 470 }, radius: 10 },
     bounds: { x: 40, y: 80, width: 520, height: 440 },
     walls: [
       { start: { x: 40, y: 80 }, end: { x: 560, y: 80 }, thickness: 8 },
@@ -247,7 +247,7 @@ export const levels: Level[] = [
     name: "Twin Mills",
     par: 5,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -268,7 +268,7 @@ export const levels: Level[] = [
     name: "Island Hop",
     par: 4,
     tee: { x: 100, y: 300 },
-    hole: { position: { x: 500, y: 300 }, radius: 18 },
+    hole: { position: { x: 500, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -292,7 +292,7 @@ export const levels: Level[] = [
     name: "Chaos Theory",
     par: 5,
     tee: { x: 100, y: 450 },
-    hole: { position: { x: 500, y: 150 }, radius: 18 },
+    hole: { position: { x: 500, y: 150 }, radius: 10 },
     bounds: { x: 40, y: 80, width: 520, height: 440 },
     walls: [
       { start: { x: 40, y: 80 }, end: { x: 560, y: 80 }, thickness: 8 },
@@ -316,7 +316,7 @@ export const levels: Level[] = [
     name: "Portal Madness",
     par: 4,
     tee: { x: 80, y: 450 },
-    hole: { position: { x: 520, y: 150 }, radius: 18 },
+    hole: { position: { x: 520, y: 150 }, radius: 10 },
     bounds: { x: 40, y: 80, width: 520, height: 440 },
     walls: [
       { start: { x: 40, y: 80 }, end: { x: 560, y: 80 }, thickness: 8 },
@@ -328,10 +328,10 @@ export const levels: Level[] = [
       { start: { x: 400, y: 170 }, end: { x: 400, y: 520 }, thickness: 8 },
     ],
     obstacles: [
-      { type: 'teleporter', shape: { x: 120, y: 200, radius: 18 }, id: 'tp1', properties: { pairedId: 'tp2' } },
-      { type: 'teleporter', shape: { x: 300, y: 400, radius: 18 }, id: 'tp2', properties: { pairedId: 'tp1' } },
-      { type: 'teleporter', shape: { x: 300, y: 150, radius: 18 }, id: 'tp3', properties: { pairedId: 'tp4' } },
-      { type: 'teleporter', shape: { x: 480, y: 400, radius: 18 }, id: 'tp4', properties: { pairedId: 'tp3' } },
+      { type: 'teleporter', shape: { x: 120, y: 200, radius: 10 }, id: 'tp1', properties: { pairedId: 'tp2' } },
+      { type: 'teleporter', shape: { x: 300, y: 400, radius: 10 }, id: 'tp2', properties: { pairedId: 'tp1' } },
+      { type: 'teleporter', shape: { x: 300, y: 150, radius: 10 }, id: 'tp3', properties: { pairedId: 'tp4' } },
+      { type: 'teleporter', shape: { x: 480, y: 400, radius: 10 }, id: 'tp4', properties: { pairedId: 'tp3' } },
     ],
     theme: { primary: '#463d4a', secondary: '#2e2531', accent: '#c084fc' }
   },
@@ -342,7 +342,7 @@ export const levels: Level[] = [
     name: "Speed Demon",
     par: 3,
     tee: { x: 80, y: 300 },
-    hole: { position: { x: 520, y: 300 }, radius: 18 },
+    hole: { position: { x: 520, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 150, width: 520, height: 300 },
     walls: [
       { start: { x: 40, y: 150 }, end: { x: 560, y: 150 }, thickness: 8 },
@@ -364,7 +364,7 @@ export const levels: Level[] = [
     name: "The Fortress",
     par: 5,
     tee: { x: 80, y: 300 },
-    hole: { position: { x: 300, y: 300 }, radius: 18 },
+    hole: { position: { x: 300, y: 300 }, radius: 10 },
     bounds: { x: 40, y: 100, width: 520, height: 400 },
     walls: [
       { start: { x: 40, y: 100 }, end: { x: 560, y: 100 }, thickness: 8 },
@@ -391,7 +391,7 @@ export const levels: Level[] = [
     name: "Grand Finale",
     par: 6,
     tee: { x: 80, y: 480 },
-    hole: { position: { x: 520, y: 120 }, radius: 18 },
+    hole: { position: { x: 520, y: 120 }, radius: 10 },
     bounds: { x: 40, y: 60, width: 520, height: 460 },
     walls: [
       { start: { x: 40, y: 60 }, end: { x: 560, y: 60 }, thickness: 8 },
@@ -407,7 +407,7 @@ export const levels: Level[] = [
       { type: 'windmill', shape: { x: 450, y: 400, radius: 45 }, properties: { speed: 2 } },
       { type: 'windmill', shape: { x: 120, y: 220, radius: 40 }, properties: { speed: -2.5 } },
       { type: 'bumper', shape: { x: 300, y: 340, radius: 22 }, properties: { bounceFactor: 1.5 } },
-      { type: 'bumper', shape: { x: 480, y: 120, radius: 18 }, properties: { bounceFactor: 1.4 } },
+      { type: 'bumper', shape: { x: 480, y: 120, radius: 10 }, properties: { bounceFactor: 1.4 } },
       { type: 'water', shape: { x: 320, y: 60, width: 80, height: 100 } },
       { type: 'sand', shape: { x: 100, y: 320, width: 70, height: 60 }, properties: { friction: 0.95 } },
       { type: 'teleporter', shape: { x: 150, y: 120, radius: 16 }, id: 'tp1', properties: { pairedId: 'tp2' } },
