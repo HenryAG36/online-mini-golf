@@ -691,18 +691,90 @@ export default function GameCanvas({
     };
   }, []);
 
+  const getDocumentCoords = useCallback((e: MouseEvent | TouchEvent) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return { x: 0, y: 0 };
+    
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    
+    if ('touches' in e) {
+      const touch = e.touches[0] || e.changedTouches[0];
+      return {
+        x: (touch.clientX - rect.left) * scaleX,
+        y: (touch.clientY - rect.top) * scaleY,
+      };
+    }
+    
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY,
+    };
+  }, []);
+
   const handlePointerDown = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     // Only allow aiming if it's my turn and ball is not moving
     if (!isMyTurn || isRolling || scored) return;
     setIsAiming(true);
-    setAimStart(getCanvasCoords(e));
+    // Always use ball position as the starting reference for aiming
+    setAimStart({ x: ball.position.x, y: ball.position.y });
     setAimEnd(getCanvasCoords(e));
-  }, [isMyTurn, isRolling, scored, getCanvasCoords]);
+  }, [isMyTurn, isRolling, scored, getCanvasCoords, ball.position.x, ball.position.y]);
 
   const handlePointerMove = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     if (!isAiming) return;
     setAimEnd(getCanvasCoords(e));
   }, [isAiming, getCanvasCoords]);
+
+  // Document-level mouse move handler for when mouse is outside canvas
+  const handleDocumentMouseMove = useCallback((e: MouseEvent) => {
+    if (!isAiming) return;
+    setAimEnd(getDocumentCoords(e));
+  }, [isAiming, getDocumentCoords]);
+
+  // Document-level mouse up handler for when mouse is released outside canvas
+  const handleDocumentMouseUp = useCallback(() => {
+    if (!isAiming || !aimStart || !aimEnd || !isMyTurn) {
+      setIsAiming(false);
+      return;
+    }
+    
+    // Calculate from ball position (aimStart) to cursor position (aimEnd)
+    const dx = aimStart.x - aimEnd.x;
+    const dy = aimStart.y - aimEnd.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    const power = Math.min(distance / 150, 1);
+    const angle = Math.atan2(dy, dx);
+    
+    if (power > 0.05) {
+      setBall(shootBall(ball, power, angle));
+      setStrokes(s => s + 1);
+      setIsRolling(true);
+      onShot(strokes + 1);
+    }
+    
+    setIsAiming(false);
+    setAimStart(null);
+    setAimEnd(null);
+  }, [isAiming, aimStart, aimEnd, isMyTurn, ball, strokes, onShot]);
+
+  // Add document-level event listeners when aiming
+  useEffect(() => {
+    if (isAiming) {
+      document.addEventListener('mousemove', handleDocumentMouseMove);
+      document.addEventListener('mouseup', handleDocumentMouseUp);
+      document.addEventListener('touchmove', handleDocumentMouseMove as unknown as EventListener);
+      document.addEventListener('touchend', handleDocumentMouseUp);
+      
+      return () => {
+        document.removeEventListener('mousemove', handleDocumentMouseMove);
+        document.removeEventListener('mouseup', handleDocumentMouseUp);
+        document.removeEventListener('touchmove', handleDocumentMouseMove as unknown as EventListener);
+        document.removeEventListener('touchend', handleDocumentMouseUp);
+      };
+    }
+  }, [isAiming, handleDocumentMouseMove, handleDocumentMouseUp]);
 
   const handlePointerUp = useCallback(() => {
     if (!isAiming || !aimStart || !aimEnd || !isMyTurn) {
@@ -710,6 +782,7 @@ export default function GameCanvas({
       return;
     }
     
+    // Calculate from ball position (aimStart) to cursor position (aimEnd)
     const dx = aimStart.x - aimEnd.x;
     const dy = aimStart.y - aimEnd.y;
     const distance = Math.sqrt(dx * dx + dy * dy);
@@ -749,7 +822,6 @@ export default function GameCanvas({
         onMouseDown={handlePointerDown}
         onMouseMove={handlePointerMove}
         onMouseUp={handlePointerUp}
-        onMouseLeave={handlePointerUp}
         onTouchStart={handlePointerDown}
         onTouchMove={handlePointerMove}
         onTouchEnd={handlePointerUp}

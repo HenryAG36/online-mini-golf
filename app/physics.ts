@@ -250,7 +250,33 @@ export function updateBall(
         
         if (paired && paired.type === 'teleporter') {
           const pairedCircle = paired.shape as Circle;
-          newBall.position = { x: pairedCircle.x, y: pairedCircle.y };
+          
+          // Calculate exit direction based on ball velocity
+          const speed = Math.sqrt(newBall.velocity.x ** 2 + newBall.velocity.y ** 2);
+          let exitDirX = newBall.velocity.x;
+          let exitDirY = newBall.velocity.y;
+          
+          // Normalize the exit direction
+          if (speed > 0) {
+            exitDirX /= speed;
+            exitDirY /= speed;
+          } else {
+            // If no velocity, use direction from source to destination
+            const toDestX = pairedCircle.x - circle.x;
+            const toDestY = pairedCircle.y - circle.y;
+            const toDestLen = Math.sqrt(toDestX ** 2 + toDestY ** 2);
+            if (toDestLen > 0) {
+              exitDirX = toDestX / toDestLen;
+              exitDirY = toDestY / toDestLen;
+            }
+          }
+          
+          // Place ball just outside the destination portal radius
+          const exitOffset = pairedCircle.radius + newBall.radius + 2;
+          newBall.position = { 
+            x: pairedCircle.x + exitDirX * exitOffset, 
+            y: pairedCircle.y + exitDirY * exitOffset 
+          };
           teleported = true;
         }
       }
