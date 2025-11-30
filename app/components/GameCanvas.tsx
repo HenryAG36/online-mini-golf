@@ -24,7 +24,7 @@ interface GameCanvasProps {
   onShot: (strokes: number) => void;
   onHoleComplete: (strokes: number) => void;
   onBallUpdate: (position: Vector2, velocity: Vector2, isMoving: boolean) => void;
-  onBallCollision: (targetPlayerId: string, newVelocity: Vector2) => void;
+  onBallCollision: (targetPlayerId: string, newPosition: Vector2, newVelocity: Vector2, velocityChange: Vector2) => void;
   onTurnEnd: () => void;
   otherPlayers: PlayerBallState[];
   currentStrokes: number;
@@ -294,8 +294,8 @@ export default function GameCanvas({
             // The index in collisions corresponds to the index in otherBalls/otherPlayersNotFinished
             const hitPlayer = otherPlayersNotFinished[collision.originalIndex];
             if (hitPlayer) {
-              console.log('Collision! Broadcasting to:', hitPlayer.oderId, 'velocityChange:', collision.velocityChange);
-              onBallCollision(hitPlayer.oderId, collision.velocityChange);
+              // Pass position, velocity for immediate local update, and velocityChange for network sync
+              onBallCollision(hitPlayer.oderId, collision.newPosition, collision.newVelocity, collision.velocityChange);
             }
           });
         }

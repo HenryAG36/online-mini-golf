@@ -35,7 +35,7 @@ interface GameContextType {
   leaveRoom: () => void;
   startGame: () => void;
   updateBallPosition: (position: Vector2, velocity: Vector2, isMoving: boolean) => void;
-  broadcastCollision: (targetPlayerId: string, newVelocity: Vector2) => void;
+  broadcastCollision: (targetPlayerId: string, newPosition: Vector2, newVelocity: Vector2, velocityChange: Vector2) => void;
   endTurn: () => void;
   completeHole: (strokes: number) => void;
   nextLevel: () => void;
@@ -403,8 +403,16 @@ export function GameProvider({ children }: GameProviderProps) {
     sendEvent('ball-update', { playerId, position, velocity, isMoving });
   }, [playerId, sendEvent]);
 
-  const broadcastCollision = useCallback((targetPlayerId: string, newVelocity: Vector2) => {
-    sendEvent('ball-collision', { targetPlayerId, newVelocity });
+  const broadcastCollision = useCallback((targetPlayerId: string, newPosition: Vector2, newVelocity: Vector2, velocityChange: Vector2) => {
+    // Immediately update local state for instant visual feedback
+    setPlayers(prev => prev.map(p => 
+      p.id === targetPlayerId 
+        ? { ...p, ballState: { position: newPosition, velocity: newVelocity, isMoving: true } }
+        : p
+    ));
+    
+    // Broadcast the velocity change to the target player's client
+    sendEvent('ball-collision', { targetPlayerId, velocityChange });
   }, [sendEvent]);
 
   // End turn - move to next player who hasn't finished

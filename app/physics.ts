@@ -99,8 +99,9 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
 
 interface CollisionInfo {
   originalIndex: number;
-  originalPosition: Vector2;
-  velocityChange: Vector2; // The impulse/change in velocity to apply
+  newPosition: Vector2; // New position after collision (with separation)
+  newVelocity: Vector2; // New velocity after collision
+  velocityChange: Vector2; // The impulse/change in velocity to apply (for network sync)
 }
 
 export function updateBall(
@@ -152,7 +153,8 @@ export function updateBall(
       };
       collisions.push({
         originalIndex: i,
-        originalPosition: otherBall.position,
+        newPosition: result.ball2.position,
+        newVelocity: result.ball2.velocity,
         velocityChange,
       });
     }

@@ -105,9 +105,8 @@ function GameContent() {
     nextLevel();
   };
 
-  const handleBallCollision = useCallback((targetPlayerId: string, newVelocity: Vector2) => {
-    console.log('Broadcasting collision to:', targetPlayerId, 'with velocity:', newVelocity);
-    broadcastCollision(targetPlayerId, newVelocity);
+  const handleBallCollision = useCallback((targetPlayerId: string, newPosition: Vector2, newVelocity: Vector2, velocityChange: Vector2) => {
+    broadcastCollision(targetPlayerId, newPosition, newVelocity, velocityChange);
   }, [broadcastCollision]);
 
   const getTotalScore = (player: typeof players[0]) => {
