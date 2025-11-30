@@ -189,6 +189,7 @@ export default function GameCanvas({
   const [ballRotation, setBallRotation] = useState(0);
   const lastBroadcastRef = useRef<number>(0);
   const wasRollingRef = useRef(false);
+  const turnEndedRef = useRef(false);
   
   // Local simulation state for other players' balls (for instant collision feedback)
   const [localOtherBalls, setLocalOtherBalls] = useState<Map<string, { position: Vector2; velocity: Vector2; startTime: number }>>(new Map());
@@ -204,6 +205,7 @@ export default function GameCanvas({
         },
       }));
       setIsRolling(true);
+      turnEndedRef.current = false; // Reset for new movement
       onExternalVelocityApplied();
     }
   }, [externalVelocity, scored, onExternalVelocityApplied]);
@@ -357,10 +359,13 @@ export default function GameCanvas({
         if (!stillMoving) {
           setIsRolling(false);
           onBallUpdate(result.ball.position, { x: 0, y: 0 }, false);
-          // End turn when ball stops
-          setTimeout(() => {
-            onTurnEnd();
-          }, 100);
+          // End turn when ball stops (only once!)
+          if (!turnEndedRef.current) {
+            turnEndedRef.current = true;
+            setTimeout(() => {
+              onTurnEnd();
+            }, 100);
+          }
           return { ...result.ball, velocity: { x: 0, y: 0 } };
         }
         
@@ -885,6 +890,7 @@ export default function GameCanvas({
       setBall(shootBall(ball, power, angle));
       setStrokes(s => s + 1);
       setIsRolling(true);
+      turnEndedRef.current = false; // Reset for new shot
       onShot(strokes + 1);
     }
     
@@ -927,6 +933,7 @@ export default function GameCanvas({
       setBall(shootBall(ball, power, angle));
       setStrokes(s => s + 1);
       setIsRolling(true);
+      turnEndedRef.current = false; // Reset for new shot
       onShot(strokes + 1);
     }
     
