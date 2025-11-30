@@ -320,14 +320,15 @@ export default function GameCanvas({
         }
         
         if (result.inWater) {
+          // Check if ball is on a ramp/bridge (using position AFTER physics update)
           const onRamp = level.obstacles.some(obs => {
             if (obs.type === 'ramp') {
               const rect = obs.shape as Rectangle;
               return (
-                currentBall.position.x >= rect.x &&
-                currentBall.position.x <= rect.x + rect.width &&
-                currentBall.position.y >= rect.y &&
-                currentBall.position.y <= rect.y + rect.height
+                result.ball.position.x >= rect.x &&
+                result.ball.position.x <= rect.x + rect.width &&
+                result.ball.position.y >= rect.y &&
+                result.ball.position.y <= rect.y + rect.height
               );
             }
             return false;

@@ -210,31 +210,71 @@ export function updateBall(
       const angle = windmillAngles.get(i) || 0;
       const bladeLength = circle.radius;
       const bladeWidth = 10;
+      const hubRadius = 12; // Center hub radius
       
-      for (let b = 0; b < 4; b++) {
-        const bladeAngle = angle + (b * Math.PI / 2);
-        const bladeEnd = {
-          x: circle.x + Math.cos(bladeAngle) * bladeLength,
-          y: circle.y + Math.sin(bladeAngle) * bladeLength,
+      // First check collision with center hub (acts like a bumper)
+      const distToCenter = distance(newBall.position, { x: circle.x, y: circle.y });
+      if (distToCenter < newBall.radius + hubRadius) {
+        // Bounce off the center hub like a bumper
+        const normal = normalize({
+          x: newBall.position.x - circle.x,
+          y: newBall.position.y - circle.y,
+        });
+        
+        // Push ball out of hub
+        newBall.position = {
+          x: circle.x + normal.x * (newBall.radius + hubRadius + 1),
+          y: circle.y + normal.y * (newBall.radius + hubRadius + 1),
         };
         
-        if (lineCircleCollision(
-          { x: circle.x, y: circle.y },
-          bladeEnd,
-          bladeWidth,
-          newBall.position,
-          newBall.radius
-        )) {
-          const perpAngle = bladeAngle + Math.PI / 2;
-          const pushForce = 2;
-          newBall.velocity = {
-            x: newBall.velocity.x + Math.cos(perpAngle) * pushForce,
-            y: newBall.velocity.y + Math.sin(perpAngle) * pushForce,
+        // Reflect velocity
+        const dot = newBall.velocity.x * normal.x + newBall.velocity.y * normal.y;
+        newBall.velocity = {
+          x: (newBall.velocity.x - 2 * dot * normal.x) * 0.8,
+          y: (newBall.velocity.y - 2 * dot * normal.y) * 0.8,
+        };
+      } else {
+        // Check blade collisions (only process ONE blade per frame)
+        for (let b = 0; b < 4; b++) {
+          const bladeAngle = angle + (b * Math.PI / 2);
+          const bladeStart = {
+            x: circle.x + Math.cos(bladeAngle) * hubRadius,
+            y: circle.y + Math.sin(bladeAngle) * hubRadius,
           };
-          newBall.position = {
-            x: newBall.position.x + Math.cos(perpAngle) * (newBall.radius + bladeWidth / 2),
-            y: newBall.position.y + Math.sin(perpAngle) * (newBall.radius + bladeWidth / 2),
+          const bladeEnd = {
+            x: circle.x + Math.cos(bladeAngle) * bladeLength,
+            y: circle.y + Math.sin(bladeAngle) * bladeLength,
           };
+          
+          if (lineCircleCollision(bladeStart, bladeEnd, bladeWidth, newBall.position, newBall.radius)) {
+            // Determine which side of the blade the ball is on
+            const perpAngle = bladeAngle + Math.PI / 2;
+            const bladeCenter = {
+              x: (bladeStart.x + bladeEnd.x) / 2,
+              y: (bladeStart.y + bladeEnd.y) / 2,
+            };
+            const toBall = {
+              x: newBall.position.x - bladeCenter.x,
+              y: newBall.position.y - bladeCenter.y,
+            };
+            
+            // Check which side of the blade the ball is on
+            const sideCheck = toBall.x * Math.cos(perpAngle) + toBall.y * Math.sin(perpAngle);
+            const pushDir = sideCheck > 0 ? 1 : -1;
+            
+            const pushForce = 2.5;
+            newBall.velocity = {
+              x: newBall.velocity.x + Math.cos(perpAngle) * pushForce * pushDir,
+              y: newBall.velocity.y + Math.sin(perpAngle) * pushForce * pushDir,
+            };
+            newBall.position = {
+              x: newBall.position.x + Math.cos(perpAngle) * (newBall.radius + bladeWidth / 2 + 2) * pushDir,
+              y: newBall.position.y + Math.sin(perpAngle) * (newBall.radius + bladeWidth / 2 + 2) * pushDir,
+            };
+            
+            // Only process one blade collision per frame
+            break;
+          }
         }
       }
     }
