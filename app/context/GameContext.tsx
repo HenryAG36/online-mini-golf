@@ -391,7 +391,7 @@ export function GameProvider({ children }: GameProviderProps) {
 
   const updateBallPosition = useCallback((position: Vector2, velocity: Vector2, isMoving: boolean) => {
     const now = performance.now();
-    if (now - lastBallUpdateRef.current < 50) return;
+    if (now - lastBallUpdateRef.current < 16) return; // ~60 fps
     lastBallUpdateRef.current = now;
 
     setPlayers(prev => prev.map(p => 

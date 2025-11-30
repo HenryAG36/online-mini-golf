@@ -336,7 +336,7 @@ export default function GameCanvas({
         const now = performance.now();
         const stillMoving = isBallMoving(result.ball);
         
-        if (now - lastBroadcastRef.current > 33) {
+        if (now - lastBroadcastRef.current > 16) { // ~60 fps
           onBallUpdate(result.ball.position, result.ball.velocity, stillMoving);
           lastBroadcastRef.current = now;
         }
