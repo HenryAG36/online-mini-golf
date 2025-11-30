@@ -189,11 +189,11 @@ export function GameProvider({ children }: GameProviderProps) {
       ));
     });
 
-    channel.bind('ball-collision', (data: { targetPlayerId: string; newVelocity: Vector2 }) => {
+    channel.bind('ball-collision', (data: { targetPlayerId: string; velocityChange: Vector2 }) => {
       console.log('Received ball-collision event:', data, 'myPlayerId:', myPlayerId);
       if (data.targetPlayerId === myPlayerId) {
-        console.log('Collision is for me! Setting velocity:', data.newVelocity);
-        setPendingCollisionVelocity(data.newVelocity);
+        console.log('Collision is for me! Applying velocity change:', data.velocityChange);
+        setPendingCollisionVelocity(data.velocityChange);
       }
     });
 
