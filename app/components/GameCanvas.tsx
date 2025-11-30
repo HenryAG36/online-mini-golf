@@ -279,13 +279,17 @@ export default function GameCanvas({
 
     const physicsLoop = () => {
       setBall((currentBall) => {
+        // Use local simulation positions when available for accurate collision detection
         const otherBalls: Ball[] = otherPlayers
           .filter(p => !p.hasFinished)
-          .map(p => ({
-            position: p.odosition,
-            velocity: p.velocity,
-            radius: BALL_RADIUS,
-          }));
+          .map(p => {
+            const localBall = localOtherBalls.get(p.oderId);
+            return {
+              position: localBall ? localBall.position : p.odosition,
+              velocity: localBall ? localBall.velocity : p.velocity,
+              radius: BALL_RADIUS,
+            };
+          });
 
         const result = updateBall(currentBall, level, windmillAngles, movingWallOffsets, otherBalls);
         
@@ -377,7 +381,7 @@ export default function GameCanvas({
 
     animationFrame = requestAnimationFrame(physicsLoop);
     return () => cancelAnimationFrame(animationFrame);
-  }, [isRolling, scored, level, windmillAngles, movingWallOffsets, strokes, onHoleComplete, onBallUpdate, onBallCollision, onTurnEnd, otherPlayers]);
+  }, [isRolling, scored, level, windmillAngles, movingWallOffsets, strokes, onHoleComplete, onBallUpdate, onBallCollision, onTurnEnd, otherPlayers, localOtherBalls]);
 
   // Local physics simulation for other players' balls (after collision)
   const hasLocalBalls = localOtherBalls.size > 0;
@@ -388,6 +392,7 @@ export default function GameCanvas({
     const FRICTION = 0.982;
     const MIN_VELOCITY = 0.1;
     const WALL_BOUNCE = 0.6;
+    const BALL_RESTITUTION = 0.9;
     const LOCAL_SIM_DURATION = 2000; // 2 seconds before syncing back to network
 
     const simulateOtherBalls = () => {
@@ -458,6 +463,65 @@ export default function GameCanvas({
             }
           }
           
+          // Check collision with our own ball (instant detection)
+          const dx = ball.position.x - newPos.x;
+          const dy = ball.position.y - newPos.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const minDist = BALL_RADIUS * 2;
+          
+          if (dist < minDist && dist > 0) {
+            // Collision with our ball!
+            const nx = dx / dist;
+            const ny = dy / dist;
+            
+            // Relative velocity
+            const dvx = newVel.x - ball.velocity.x;
+            const dvy = newVel.y - ball.velocity.y;
+            const dvn = dvx * nx + dvy * ny;
+            
+            if (dvn > 0) {
+              // Calculate impulse
+              const impulse = (1 + BALL_RESTITUTION) * dvn / 2;
+              
+              // Update other ball velocity
+              newVel = {
+                x: newVel.x - impulse * nx,
+                y: newVel.y - impulse * ny,
+              };
+              
+              // Separate balls
+              const overlap = minDist - dist;
+              newPos = {
+                x: newPos.x - (overlap / 2 + 1) * nx,
+                y: newPos.y - (overlap / 2 + 1) * ny,
+              };
+              
+              // Apply impulse to our ball instantly
+              const myVelocityChange = {
+                x: impulse * nx,
+                y: impulse * ny,
+              };
+              
+              setBall(prevBall => ({
+                ...prevBall,
+                position: {
+                  x: prevBall.position.x + (overlap / 2 + 1) * nx,
+                  y: prevBall.position.y + (overlap / 2 + 1) * ny,
+                },
+                velocity: {
+                  x: prevBall.velocity.x + myVelocityChange.x,
+                  y: prevBall.velocity.y + myVelocityChange.y,
+                },
+              }));
+              
+              // Start rolling if we weren't already
+              if (!isRolling && !scored) {
+                setIsRolling(true);
+                turnEndedRef.current = false;
+              }
+            }
+          }
+          
           // Check if still moving
           const speed = Math.sqrt(newVel.x ** 2 + newVel.y ** 2);
           if (speed > MIN_VELOCITY) {
@@ -474,7 +538,7 @@ export default function GameCanvas({
 
     animationFrame = requestAnimationFrame(simulateOtherBalls);
     return () => cancelAnimationFrame(animationFrame);
-  }, [hasLocalBalls, level.walls]);
+  }, [hasLocalBalls, level.walls, ball.position.x, ball.position.y, ball.velocity.x, ball.velocity.y, isRolling, scored]);
 
   // Helper functions for wall collision in local simulation
   function checkWallCollision(wall: { start: Vector2; end: Vector2; thickness: number }, pos: Vector2, radius: number): boolean {
