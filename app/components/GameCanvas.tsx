@@ -294,8 +294,8 @@ export default function GameCanvas({
             // The index in collisions corresponds to the index in otherBalls/otherPlayersNotFinished
             const hitPlayer = otherPlayersNotFinished[collision.originalIndex];
             if (hitPlayer) {
-              console.log('Collision! Broadcasting to:', hitPlayer.oderId, 'velocity:', collision.newVelocity);
-              onBallCollision(hitPlayer.oderId, collision.newVelocity);
+              console.log('Collision! Broadcasting to:', hitPlayer.oderId, 'velocityChange:', collision.velocityChange);
+              onBallCollision(hitPlayer.oderId, collision.velocityChange);
             }
           });
         }

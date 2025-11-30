@@ -7,7 +7,7 @@ const MAX_POWER = 8;
 const MIN_POWER = 1.5;
 const HOLE_GRAVITY_RADIUS = 40;
 const HOLE_GRAVITY_STRENGTH = 0.12;
-const BALL_BOUNCE = 0.4; // 40% energy transfer on ball collision
+const BALL_RESTITUTION = 0.9; // 90% energy retained (elastic collision)
 const BALL_RADIUS = 6; // Smaller ball
 
 export function createBall(x: number, y: number): Ball {
@@ -44,18 +44,27 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
   const minDist = ball1.radius + ball2.radius;
 
   if (dist < minDist && dist > 0) {
+    // Collision normal (from ball1 to ball2)
     const nx = dx / dist;
     const ny = dy / dist;
 
+    // Relative velocity
     const dvx = ball1.velocity.x - ball2.velocity.x;
     const dvy = ball1.velocity.y - ball2.velocity.y;
+    
+    // Relative velocity along collision normal
     const dvn = dvx * nx + dvy * ny;
 
+    // Only resolve if balls are approaching
     if (dvn > 0) {
-      const impulse = dvn * BALL_BOUNCE;
+      // For equal mass elastic collision, velocities along normal are exchanged
+      // With restitution: impulse = (1 + e) * dvn / 2 for equal masses
+      const impulse = (1 + BALL_RESTITUTION) * dvn / 2;
+      
+      // Separate the balls to prevent overlap
       const overlap = minDist - dist;
-      const separationX = (overlap / 2 + 0.5) * nx;
-      const separationY = (overlap / 2 + 0.5) * ny;
+      const separationX = (overlap / 2 + 1) * nx;
+      const separationY = (overlap / 2 + 1) * ny;
 
       return {
         ball1: {
@@ -91,7 +100,7 @@ export function handleBallCollision(ball1: Ball, ball2: Ball): { ball1: Ball; ba
 interface CollisionInfo {
   originalIndex: number;
   originalPosition: Vector2;
-  newVelocity: Vector2;
+  velocityChange: Vector2; // The impulse/change in velocity to apply
 }
 
 export function updateBall(
@@ -136,10 +145,15 @@ export function updateBall(
     const result = handleBallCollision(newBall, otherBall);
     if (result.collided) {
       newBall = result.ball1;
+      // Calculate the velocity change (impulse) for the other ball
+      const velocityChange = {
+        x: result.ball2.velocity.x - otherBall.velocity.x,
+        y: result.ball2.velocity.y - otherBall.velocity.y,
+      };
       collisions.push({
         originalIndex: i,
         originalPosition: otherBall.position,
-        newVelocity: result.ball2.velocity,
+        velocityChange,
       });
     }
   }
