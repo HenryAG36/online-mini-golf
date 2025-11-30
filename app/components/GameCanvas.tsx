@@ -191,7 +191,7 @@ export default function GameCanvas({
   const wasRollingRef = useRef(false);
   
   // Local simulation state for other players' balls (for instant collision feedback)
-  const [localOtherBalls, setLocalOtherBalls] = useState<Map<string, { position: Vector2; velocity: Vector2 }>>(new Map());
+  const [localOtherBalls, setLocalOtherBalls] = useState<Map<string, { position: Vector2; velocity: Vector2; startTime: number }>>(new Map());
 
   useEffect(() => {
     if (externalVelocity && !scored) {
@@ -303,6 +303,7 @@ export default function GameCanvas({
                 newMap.set(hitPlayer.oderId, {
                   position: collision.newPosition,
                   velocity: collision.newVelocity,
+                  startTime: performance.now(),
                 });
                 return newMap;
               });
@@ -381,30 +382,81 @@ export default function GameCanvas({
     let animationFrame: number;
     const FRICTION = 0.982;
     const MIN_VELOCITY = 0.1;
+    const WALL_BOUNCE = 0.6;
+    const LOCAL_SIM_DURATION = 2000; // 2 seconds before syncing back to network
 
     const simulateOtherBalls = () => {
+      const now = performance.now();
+      
       setLocalOtherBalls(prev => {
         if (prev.size === 0) return prev;
         
-        const newMap = new Map<string, { position: Vector2; velocity: Vector2 }>();
+        const newMap = new Map<string, { position: Vector2; velocity: Vector2; startTime: number }>();
 
         prev.forEach((ballState, oderId) => {
+          // Check if simulation has run for 2 seconds - sync back to network
+          if (now - ballState.startTime > LOCAL_SIM_DURATION) {
+            // Don't add to map - will fall back to network position
+            return;
+          }
+          
           // Apply velocity
-          const newPos = {
+          let newPos = {
             x: ballState.position.x + ballState.velocity.x,
             y: ballState.position.y + ballState.velocity.y,
           };
           
           // Apply friction
-          const newVel = {
+          let newVel = {
             x: ballState.velocity.x * FRICTION,
             y: ballState.velocity.y * FRICTION,
           };
           
+          // Wall collisions
+          for (const wall of level.walls) {
+            const collision = checkWallCollision(wall, newPos, BALL_RADIUS);
+            if (collision) {
+              // Calculate wall normal
+              const wallDirX = wall.end.x - wall.start.x;
+              const wallDirY = wall.end.y - wall.start.y;
+              const wallLen = Math.sqrt(wallDirX ** 2 + wallDirY ** 2);
+              const normalX = -wallDirY / wallLen;
+              const normalY = wallDirX / wallLen;
+              
+              // Determine correct normal direction
+              const wallCenterX = (wall.start.x + wall.end.x) / 2;
+              const wallCenterY = (wall.start.y + wall.end.y) / 2;
+              const toBallX = newPos.x - wallCenterX;
+              const toBallY = newPos.y - wallCenterY;
+              
+              let nx = normalX;
+              let ny = normalY;
+              if (toBallX * nx + toBallY * ny < 0) {
+                nx = -nx;
+                ny = -ny;
+              }
+              
+              // Push ball out of wall
+              const closest = closestPointOnWall(wall, newPos);
+              const pushDist = BALL_RADIUS + wall.thickness / 2 + 1;
+              newPos = {
+                x: closest.x + nx * pushDist,
+                y: closest.y + ny * pushDist,
+              };
+              
+              // Reflect velocity
+              const dot = newVel.x * nx + newVel.y * ny;
+              newVel = {
+                x: (newVel.x - 2 * dot * nx) * WALL_BOUNCE,
+                y: (newVel.y - 2 * dot * ny) * WALL_BOUNCE,
+              };
+            }
+          }
+          
           // Check if still moving
           const speed = Math.sqrt(newVel.x ** 2 + newVel.y ** 2);
           if (speed > MIN_VELOCITY) {
-            newMap.set(oderId, { position: newPos, velocity: newVel });
+            newMap.set(oderId, { position: newPos, velocity: newVel, startTime: ballState.startTime });
           }
           // If stopped, don't add to map (will fall back to network position)
         });
@@ -417,7 +469,26 @@ export default function GameCanvas({
 
     animationFrame = requestAnimationFrame(simulateOtherBalls);
     return () => cancelAnimationFrame(animationFrame);
-  }, [hasLocalBalls]);
+  }, [hasLocalBalls, level.walls]);
+
+  // Helper functions for wall collision in local simulation
+  function checkWallCollision(wall: { start: Vector2; end: Vector2; thickness: number }, pos: Vector2, radius: number): boolean {
+    const closest = closestPointOnWall(wall, pos);
+    const dx = pos.x - closest.x;
+    const dy = pos.y - closest.y;
+    const dist = Math.sqrt(dx ** 2 + dy ** 2);
+    return dist < radius + wall.thickness / 2;
+  }
+
+  function closestPointOnWall(wall: { start: Vector2; end: Vector2 }, pos: Vector2): Vector2 {
+    const dx = wall.end.x - wall.start.x;
+    const dy = wall.end.y - wall.start.y;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) return wall.start;
+    let t = ((pos.x - wall.start.x) * dx + (pos.y - wall.start.y) * dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return { x: wall.start.x + t * dx, y: wall.start.y + t * dy };
+  }
 
   // Draw
   useEffect(() => {
