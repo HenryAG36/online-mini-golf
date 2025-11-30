@@ -189,6 +189,9 @@ export default function GameCanvas({
   const [ballRotation, setBallRotation] = useState(0);
   const lastBroadcastRef = useRef<number>(0);
   const wasRollingRef = useRef(false);
+  
+  // Local simulation state for other players' balls (for instant collision feedback)
+  const [localOtherBalls, setLocalOtherBalls] = useState<Map<string, { position: Vector2; velocity: Vector2 }>>(new Map());
 
   useEffect(() => {
     if (externalVelocity && !scored) {
@@ -294,7 +297,16 @@ export default function GameCanvas({
             // The index in collisions corresponds to the index in otherBalls/otherPlayersNotFinished
             const hitPlayer = otherPlayersNotFinished[collision.originalIndex];
             if (hitPlayer) {
-              // Pass position, velocity for immediate local update, and velocityChange for network sync
+              // Start local simulation for the hit ball
+              setLocalOtherBalls(prev => {
+                const newMap = new Map(prev);
+                newMap.set(hitPlayer.oderId, {
+                  position: collision.newPosition,
+                  velocity: collision.newVelocity,
+                });
+                return newMap;
+              });
+              // Broadcast to network
               onBallCollision(hitPlayer.oderId, collision.newPosition, collision.newVelocity, collision.velocityChange);
             }
           });
@@ -360,6 +372,52 @@ export default function GameCanvas({
     animationFrame = requestAnimationFrame(physicsLoop);
     return () => cancelAnimationFrame(animationFrame);
   }, [isRolling, scored, level, windmillAngles, movingWallOffsets, strokes, onHoleComplete, onBallUpdate, onBallCollision, onTurnEnd, otherPlayers]);
+
+  // Local physics simulation for other players' balls (after collision)
+  const hasLocalBalls = localOtherBalls.size > 0;
+  useEffect(() => {
+    if (!hasLocalBalls) return;
+
+    let animationFrame: number;
+    const FRICTION = 0.982;
+    const MIN_VELOCITY = 0.1;
+
+    const simulateOtherBalls = () => {
+      setLocalOtherBalls(prev => {
+        if (prev.size === 0) return prev;
+        
+        const newMap = new Map<string, { position: Vector2; velocity: Vector2 }>();
+
+        prev.forEach((ballState, oderId) => {
+          // Apply velocity
+          const newPos = {
+            x: ballState.position.x + ballState.velocity.x,
+            y: ballState.position.y + ballState.velocity.y,
+          };
+          
+          // Apply friction
+          const newVel = {
+            x: ballState.velocity.x * FRICTION,
+            y: ballState.velocity.y * FRICTION,
+          };
+          
+          // Check if still moving
+          const speed = Math.sqrt(newVel.x ** 2 + newVel.y ** 2);
+          if (speed > MIN_VELOCITY) {
+            newMap.set(oderId, { position: newPos, velocity: newVel });
+          }
+          // If stopped, don't add to map (will fall back to network position)
+        });
+
+        return newMap;
+      });
+
+      animationFrame = requestAnimationFrame(simulateOtherBalls);
+    };
+
+    animationFrame = requestAnimationFrame(simulateOtherBalls);
+    return () => cancelAnimationFrame(animationFrame);
+  }, [hasLocalBalls]);
 
   // Draw
   useEffect(() => {
@@ -574,15 +632,20 @@ export default function GameCanvas({
     // Other players' balls
     otherPlayers.forEach(player => {
       if (player.hasFinished) return;
-      drawBall(ctx, player.odosition.x, player.odosition.y, BALL_RADIUS, player.color, 0);
+      
+      // Use local simulation position if available, otherwise network position
+      const localBall = localOtherBalls.get(player.oderId);
+      const displayPos = localBall ? localBall.position : player.odosition;
+      
+      drawBall(ctx, displayPos.x, displayPos.y, BALL_RADIUS, player.color, 0);
       
       ctx.font = '9px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       const textWidth = ctx.measureText(player.name).width;
-      ctx.fillRect(player.odosition.x - textWidth / 2 - 3, player.odosition.y - 18, textWidth + 6, 12);
+      ctx.fillRect(displayPos.x - textWidth / 2 - 3, displayPos.y - 18, textWidth + 6, 12);
       ctx.fillStyle = '#ffffff';
-      ctx.fillText(player.name, player.odosition.x, player.odosition.y - 9);
+      ctx.fillText(player.name, displayPos.x, displayPos.y - 9);
     });
 
     // My ball
@@ -667,7 +730,7 @@ export default function GameCanvas({
       ctx.fillText('HOLE!', level.hole.position.x, level.hole.position.y - 35);
     }
 
-  }, [ball, level, isAiming, aimStart, aimEnd, playerColor, isRolling, scored, isMyTurn, windmillAngles, movingWallOffsets, showSplash, ballRotation, otherPlayers, currentTurnPlayerName]);
+  }, [ball, level, isAiming, aimStart, aimEnd, playerColor, isRolling, scored, isMyTurn, windmillAngles, movingWallOffsets, showSplash, ballRotation, otherPlayers, localOtherBalls, currentTurnPlayerName]);
 
   const getCanvasCoords = useCallback((e: React.MouseEvent | React.TouchEvent) => {
     const canvas = canvasRef.current;
